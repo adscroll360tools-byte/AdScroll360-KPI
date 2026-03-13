@@ -162,9 +162,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         localStorage.removeItem(SESSION_KEY);
     };
 
-    const addUser = async (user: Omit<AppUser, "id" | "createdAt">) => {
+    const addUser = async (user: any) => {
+        const { name, email, password, role, department, position } = user;
         const newUser = {
-            ...user,
+            name,
+            email,
+            password,
+            role,
+            department,
+            position,
             created_at: new Date().toISOString(),
         };
 
@@ -174,17 +180,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             .select()
             .single();
 
-        if (error) return { success: false, error: error.message };
+        if (error) {
+            console.error("Supabase error in addUser:", error);
+            return { success: false, error: error.message };
+        }
         
         const mapped = mapUser(data);
         setUsers(prev => [...prev, mapped]);
         return { success: true };
     };
 
-    const updateUser = async (id: string, updates: Partial<AppUser>) => {
+    const updateUser = async (id: string, updates: any) => {
+        // Filter out unwanted fields like confirmPassword, createdAt, etc.
+        const allowed = ['name', 'email', 'password', 'role', 'department', 'position', 'score'];
+        const filtered: any = {};
+        Object.keys(updates).forEach(key => {
+            if (allowed.includes(key)) filtered[key] = updates[key];
+        });
+
         const { error } = await supabase
             .from('users')
-            .update(updates)
+            .update(filtered)
             .eq('id', id);
 
         if (error) {
@@ -192,9 +208,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             return;
         }
 
-        setUsers((prev) => prev.map((u) => (u.id === id ? { ...u, ...updates } : u)));
+        setUsers((prev) => prev.map((u) => (u.id === id ? { ...u, ...filtered } : u)));
         if (currentUser?.id === id) {
-            setCurrentUser((prev) => prev ? { ...prev, ...updates } : prev);
+            setCurrentUser((prev) => prev ? { ...prev, ...filtered } : prev);
         }
     };
 

@@ -312,6 +312,7 @@ export default function EmployeesPage() {
                     <div className="space-y-1.5"><Label>Dept</Label><select value={form.department} onChange={(e) => setForm({ ...form, department: e.target.value })} className="flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm">{DEPARTMENTS.map((d) => <option key={d} value={d}>{d}</option>)}</select></div>
                   </div>
                   <div className="space-y-1.5"><Label>Position</Label><select value={form.position} onChange={(e) => setForm({ ...form, position: e.target.value })} className="flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm">{ROLES.map((r) => <option key={r} value={r}>{r}</option>)}</select></div>
+                  {formError && <p className="text-xs font-semibold text-destructive bg-destructive/10 p-2 rounded">{formError}</p>}
                   <Button type="submit" className="w-full h-9">{editTarget ? "Save Changes" : "Create Account"}</Button>
                 </form>
               </div>

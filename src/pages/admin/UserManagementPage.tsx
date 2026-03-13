@@ -253,14 +253,16 @@ export default function UserManagementPage() {
                                                 <Label>Confirm Password</Label><Input type="password" value={userForm.confirmPassword} onChange={(e) => setUserForm({ ...userForm, confirmPassword: e.target.value })} />
                                             </div>
                                         )}
-                                        <Button type="submit" className="w-full">Submit</Button>
+                                         {formError && <p className="text-xs font-medium text-destructive bg-destructive/10 p-2 rounded">{formError}</p>}
+                                         <Button type="submit" className="w-full">Submit</Button>
                                     </form>
                                 )}
                                 {modalMode === "change-password" && (
                                     <form onSubmit={handleChangePw} className="px-6 py-5 space-y-4">
                                         <div className="space-y-1.5"><Label>New Password</Label><Input type="password" value={pwForm.newPw} onChange={(e) => setPwForm({ ...pwForm, newPw: e.target.value })} /></div>
                                         <div className="space-y-1.5"><Label>Confirm New Password</Label><Input type="password" value={pwForm.confirmPw} onChange={(e) => setPwForm({ ...pwForm, confirmPw: e.target.value })} /></div>
-                                        <Button type="submit" className="w-full">Reset Password</Button>
+                                         {formError && <p className="text-xs font-medium text-destructive bg-destructive/10 p-2 rounded">{formError}</p>}
+                                         <Button type="submit" className="w-full">Reset Password</Button>
                                     </form>
                                 )}
                             </div>
