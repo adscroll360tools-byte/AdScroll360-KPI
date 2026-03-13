@@ -1,0 +1,6 @@
+Supabase Project Details
+------------------------
+Project URL: https://vndycdyrqmpjcryasesw.supabase.co
+Anon Key: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZuZHljZHlycW1wamNyeWFzZXN3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM0MTQzODQsImV4cCI6MjA4ODk5MDM4NH0.x7RTq352Zf707zRPjfRlMdfb1l8ETwlGBsBucIlurIs
+Publishable Key: sb_publishable_9e7JS5VCiUz0-GKbad3cDg_WmCyGwZ-
+Postgres URL: postgresql://postgres:mg6VMj54a5cfDn6p@db.vndycdyrqmpjcryasesw.supabase.co:5432/postgres
