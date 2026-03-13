@@ -2,7 +2,6 @@
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
 -- Create ENUM types
--- We use 'DROP TYPE IF EXISTS ... CASCADE' to allow re-running the script
 DROP TYPE IF EXISTS user_role CASCADE;
 CREATE TYPE user_role AS ENUM ('admin', 'controller', 'employee');
 
@@ -15,7 +14,7 @@ CREATE TYPE attendance_status AS ENUM ('Present', 'Late', 'Absent', 'On Leave', 
 -- 1. USERS TABLE
 DROP TABLE IF EXISTS users CASCADE;
 CREATE TABLE users (
-  id TEXT PRIMARY KEY DEFAULT uuid_generate_v4()::text,
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   email TEXT UNIQUE NOT NULL,
   name TEXT NOT NULL,
   password TEXT NOT NULL,
@@ -27,13 +26,14 @@ CREATE TABLE users (
 );
 
 -- Insert default admin
+-- Password: AAAAAAAAAA@123456789
 INSERT INTO users (id, email, name, password, role, department, position) 
-VALUES ('admin-001', 'basith@adscroll360.com', 'Basith', 'AAAAAAAAAA@123456789', 'admin', 'Management', 'Core Admin');
+VALUES ('00000000-0000-0000-0000-000000000001', 'basith@adscroll360.com', 'Basith', 'AAAAAAAAAA@123456789', 'admin', 'Management', 'Core Admin');
 
 -- 2. TASKS TABLE
 DROP TABLE IF EXISTS tasks CASCADE;
 CREATE TABLE tasks (
-  id TEXT PRIMARY KEY DEFAULT uuid_generate_v4()::text,
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   title TEXT NOT NULL,
   category TEXT NOT NULL,
   status task_status DEFAULT 'Pending',
@@ -41,8 +41,8 @@ CREATE TABLE tasks (
   deadline TEXT,
   time_spent TEXT DEFAULT '0m',
   notes TEXT,
-  assignee_id TEXT, -- User ID
-  assigned_by_id TEXT,
+  assignee_id UUID REFERENCES users(id) ON DELETE SET NULL,
+  assigned_by_id UUID REFERENCES users(id) ON DELETE SET NULL,
   kpi_relation_id TEXT,
   type TEXT DEFAULT 'Individual',
   messages JSONB DEFAULT '[]',
@@ -53,7 +53,7 @@ CREATE TABLE tasks (
 -- 3. KPIS TABLE
 DROP TABLE IF EXISTS kpis CASCADE;
 CREATE TABLE kpis (
-  id TEXT PRIMARY KEY DEFAULT uuid_generate_v4()::text,
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   title TEXT NOT NULL,
   description TEXT,
   type TEXT NOT NULL, -- 'Company', 'Group', 'Individual'
@@ -62,7 +62,7 @@ CREATE TABLE kpis (
   unit TEXT NOT NULL,
   daily_min INTEGER,
   daily_max INTEGER,
-  assigned_to_id TEXT,
+  assigned_to_id UUID REFERENCES users(id) ON DELETE SET NULL,
   group_id TEXT,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
@@ -70,7 +70,7 @@ CREATE TABLE kpis (
 -- 4. QUALITY METRICS & SCORES
 DROP TABLE IF EXISTS quality_metrics CASCADE;
 CREATE TABLE quality_metrics (
-  id TEXT PRIMARY KEY DEFAULT uuid_generate_v4()::text,
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   metric TEXT NOT NULL,
   weight INTEGER NOT NULL,
   description TEXT,
@@ -79,8 +79,8 @@ CREATE TABLE quality_metrics (
 
 DROP TABLE IF EXISTS quality_scores CASCADE;
 CREATE TABLE quality_scores (
-  id TEXT PRIMARY KEY DEFAULT uuid_generate_v4()::text,
-  employee_id TEXT NOT NULL,
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  employee_id UUID REFERENCES users(id) ON DELETE CASCADE,
   score INTEGER NOT NULL,
   breakdown JSONB NOT NULL,
   month TEXT NOT NULL,
@@ -90,8 +90,8 @@ CREATE TABLE quality_scores (
 -- 5. ATTENDANCE TABLE
 DROP TABLE IF EXISTS attendance CASCADE;
 CREATE TABLE attendance (
-  id TEXT PRIMARY KEY DEFAULT uuid_generate_v4()::text,
-  user_id TEXT REFERENCES users(id) ON DELETE CASCADE,
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  user_id UUID REFERENCES users(id) ON DELETE CASCADE,
   date DATE NOT NULL DEFAULT CURRENT_DATE,
   status attendance_status DEFAULT 'Present',
   check_in_time TEXT DEFAULT '—',
@@ -105,8 +105,8 @@ CREATE TABLE attendance (
 -- 6. BREAK REQUESTS TABLE
 DROP TABLE IF EXISTS break_requests CASCADE;
 CREATE TABLE break_requests (
-  id TEXT PRIMARY KEY DEFAULT uuid_generate_v4()::text,
-  user_id TEXT REFERENCES users(id) ON DELETE CASCADE,
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  user_id UUID REFERENCES users(id) ON DELETE CASCADE,
   date TEXT NOT NULL,
   reason TEXT NOT NULL,
   session_time TEXT NOT NULL,
@@ -117,31 +117,31 @@ CREATE TABLE break_requests (
 -- 7. REWARDS TABLE
 DROP TABLE IF EXISTS rewards CASCADE;
 CREATE TABLE rewards (
-  id TEXT PRIMARY KEY DEFAULT uuid_generate_v4()::text,
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   title TEXT NOT NULL,
   type TEXT NOT NULL,
   date TEXT NOT NULL,
   status TEXT DEFAULT 'Pending',
-  recipient_id TEXT REFERENCES users(id) ON DELETE CASCADE,
+  recipient_id UUID REFERENCES users(id) ON DELETE CASCADE,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
 -- 8. SKILLS TABLE
 DROP TABLE IF EXISTS skills CASCADE;
 CREATE TABLE skills (
-  id TEXT PRIMARY KEY DEFAULT uuid_generate_v4()::text,
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   name TEXT NOT NULL,
   category TEXT NOT NULL,
   progress INTEGER DEFAULT 0,
-  user_id TEXT REFERENCES users(id) ON DELETE CASCADE,
+  user_id UUID REFERENCES users(id) ON DELETE CASCADE,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
 -- 9. STANDUPS TABLE
 DROP TABLE IF EXISTS standups CASCADE;
 CREATE TABLE standups (
-  id TEXT PRIMARY KEY DEFAULT uuid_generate_v4()::text,
-  user_id TEXT REFERENCES users(id) ON DELETE CASCADE,
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  user_id UUID REFERENCES users(id) ON DELETE CASCADE,
   yesterday TEXT NOT NULL,
   today TEXT NOT NULL,
   blockers TEXT DEFAULT 'None',
@@ -149,7 +149,7 @@ CREATE TABLE standups (
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
--- Enable Row Level Security (RLS) but set to full access for now (demo mode)
+-- Enable Row Level Security (RLS)
 ALTER TABLE users ENABLE ROW LEVEL SECURITY;
 ALTER TABLE tasks ENABLE ROW LEVEL SECURITY;
 ALTER TABLE rewards ENABLE ROW LEVEL SECURITY;
@@ -161,6 +161,7 @@ ALTER TABLE kpis ENABLE ROW LEVEL SECURITY;
 ALTER TABLE quality_metrics ENABLE ROW LEVEL SECURITY;
 ALTER TABLE quality_scores ENABLE ROW LEVEL SECURITY;
 
+-- Create Policies
 CREATE POLICY "Allow all access to users" ON users FOR ALL USING (true);
 CREATE POLICY "Allow all access to tasks" ON tasks FOR ALL USING (true);
 CREATE POLICY "Allow all access to rewards" ON rewards FOR ALL USING (true);
