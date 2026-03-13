@@ -1,35 +1,19 @@
-import { useState } from "react";
-import { motion } from "framer-motion";
+import { useState, useMemo } from "react";
+import { motion, AnimatePresence } from "framer-motion";
 import {
   CalendarClock, Clock, Coffee, LogIn, LogOut,
-  CheckCircle2, XCircle, AlertTriangle, Users,
+  CheckCircle2, XCircle, AlertTriangle, Users, Check, X
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { StatCard } from "@/components/StatCard";
 import { stagger, fadeUp } from "@/lib/animations";
 import { toast } from "sonner";
 import { useAuth } from "@/context/AuthContext";
+import { useAttendance, AttendanceStatus } from "@/context/AttendanceContext";
 
-// ─── Types ────────────────────────────────────────────────────
+// Types
 type MyAttendanceState = "not-checked-in" | "checked-in" | "on-break" | "checked-out";
-type MemberStatus = "Present" | "Late" | "Absent" | "On Leave" | "Break";
-
-interface MemberRecord {
-  userId: string;
-  name: string;
-  role: string;
-  status: MemberStatus;
-  checkIn: string;
-  checkOut: string;
-}
-
-const weekAttendance = [
-  { day: "Mon", status: "Present", checkIn: "8:55 AM", checkOut: "6:05 PM" },
-  { day: "Tue", status: "Present", checkIn: "9:00 AM", checkOut: "6:10 PM" },
-  { day: "Wed", status: "Late", checkIn: "9:20 AM", checkOut: "6:15 PM" },
-  { day: "Thu", status: "Present", checkIn: "8:50 AM", checkOut: "—" },
-  { day: "Fri", status: "—", checkIn: "—", checkOut: "—" },
-];
+type TeamTimeFilter = "Daily" | "Weekly" | "Monthly" | "Yearly";
 
 const statusBadge: Record<string, string> = {
   Present: "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400",
@@ -41,59 +25,79 @@ const statusBadge: Record<string, string> = {
   "—": "bg-muted text-muted-foreground",
 };
 
-const STATUS_OPTIONS: MemberStatus[] = ["Present", "Late", "Absent", "On Leave", "Break"];
-
-function getTimeNow() {
-  return new Date().toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true });
-}
+const STATUS_OPTIONS: AttendanceStatus[] = ["Present", "Late", "Absent", "Leave", "Break"];
 
 export default function AttendancePage() {
   const { currentUser, users } = useAuth();
+  const { 
+    records, 
+    breakRequests, 
+    checkIn, 
+    checkOut, 
+    requestBreak, 
+    approveBreak, 
+    rejectBreak, 
+    endBreak, 
+    updateMemberAttendance 
+  } = useAttendance();
+
   const isAdmin = currentUser?.role === "admin";
   const isController = currentUser?.role === "controller";
   const canManage = isAdmin || isController;
 
-  // ── My own attendance state ─────────────────────────────────
-  const [state, setState] = useState<MyAttendanceState>("checked-in");
-  const [checkInTime, setCheckInTime] = useState("8:55 AM");
-  const [breakStart, setBreakStart] = useState<string | null>(null);
-  const [checkOutTime, setCheckOutTime] = useState<string | null>(null);
+  const [showBreakModal, setShowBreakModal] = useState(false);
+  const [breakReason, setBreakReason] = useState("");
+  const [breakDuration, setBreakDuration] = useState("");
+  const [teamTimeFilter, setTeamTimeFilter] = useState<TeamTimeFilter>("Daily");
 
-  // ── Team attendance (admin/controller) ─────────────────────
-  const teamMembers = users.filter((u) => u.role !== "admin");
-  const [teamRecords, setTeamRecords] = useState<MemberRecord[]>(() =>
-    teamMembers.map((u) => ({
-      userId: u.id,
-      name: u.name,
-      role: u.role,
-      status: "Present" as MemberStatus,
-      checkIn: "9:00 AM",
-      checkOut: "—",
-    }))
-  );
+  const today = useMemo(() => {
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  }, []);
 
-  const updateMemberStatus = (userId: string, status: MemberStatus) => {
-    setTeamRecords((prev) =>
-      prev.map((r) =>
-        r.userId === userId
-          ? { ...r, status, checkIn: status === "Absent" || status === "On Leave" ? "—" : r.checkIn }
-          : r
-      )
-    );
-    const member = teamMembers.find((u) => u.id === userId);
-    toast.success(`${member?.name} marked as ${status}`);
+  const myTodayRecord = records.find(r => r.userId === currentUser?.id && r.date === today);
+
+  let state: MyAttendanceState = "not-checked-in";
+  if (myTodayRecord) {
+      if (myTodayRecord.checkOutTime) state = "checked-out";
+      else if (myTodayRecord.status === "Break") state = "on-break";
+      else state = "checked-in";
+  }
+
+  const handleCheckIn = () => { 
+    const res = checkIn(); 
+    if (res.success) toast.success("Checked In!", { description: `Status: ${res.status}` });
+    else toast.error(res.error);
+  };
+  
+  const handleCheckOut = () => { 
+    const res = checkOut(); 
+    if (res.success) toast.success("Checked Out!");
+    else toast.error(res.error);
   };
 
-  const handleCheckIn = () => { const t = getTimeNow(); setCheckInTime(t); setCheckOutTime(null); setState("checked-in"); toast.success("Checked In!", { description: `Welcome! Checked in at ${t}.` }); };
-  const handleCheckOut = () => { const t = getTimeNow(); setCheckOutTime(t); setState("checked-out"); toast.success("Checked Out!", { description: `See you tomorrow! At ${t}.` }); };
-  const handleBreak = () => {
-    if (state === "checked-in") { const t = getTimeNow(); setBreakStart(t); setState("on-break"); toast("On Break", { description: `Break started at ${t}.` }); }
-    else if (state === "on-break") { const t = getTimeNow(); setState("checked-in"); toast("Break Ended", { description: `Back to work at ${t}.` }); }
+  const handleBreakRequestSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const res = requestBreak(breakReason, breakDuration);
+    if (res.success) {
+      toast.success("Break request submitted", { description: "Pending controller approval" });
+      setShowBreakModal(false);
+      setBreakReason("");
+      setBreakDuration("");
+    } else {
+      toast.error(res.error);
+    }
+  };
+
+  const handleEndBreak = () => {
+    const res = endBreak();
+    if (res.success) toast.success("Break Ended", { description: "Back to work!" });
+    else toast.error(res.error);
   };
 
   const statusLabel: Record<MyAttendanceState, string> = {
     "not-checked-in": "Not Checked In",
-    "checked-in": "On Time",
+    "checked-in": myTodayRecord?.status || "On Time",
     "on-break": "On Break",
     "checked-out": "Checked Out",
   };
@@ -104,18 +108,87 @@ export default function AttendancePage() {
   const clockColor = state === "on-break" ? "text-amber-600" : state === "checked-in" ? "text-green-600" : "text-muted-foreground";
   const clockBg = state === "on-break" ? "bg-amber-500/20" : state === "checked-in" ? "bg-green-500/20" : "bg-muted-foreground/10";
 
-  // Team stats
-  const presentCount = teamRecords.filter((r) => r.status === "Present" || r.status === "Break").length;
-  const lateCount = teamRecords.filter((r) => r.status === "Late").length;
-  const absentCount = teamRecords.filter((r) => r.status === "Absent").length;
-  const onLeaveCount = teamRecords.filter((r) => r.status === "On Leave").length;
+  // Team stats logic for admin/controller
+  const teamMembers = users.filter((u) => u.role !== "admin");
+
+  const filteredTeamRecords = useMemo(() => {
+    return teamMembers.flatMap(u => {
+      if (teamTimeFilter === "Daily") {
+          const rec = records.find(r => r.userId === u.id && r.date === today);
+          return [{
+              id: rec?.id || `dummy-${u.id}`,
+              userId: u.id,
+              name: u.name,
+              role: u.role,
+              date: today,
+              status: rec?.status || "—",
+              checkIn: rec?.checkInTime || "—",
+              checkOut: rec?.checkOutTime || "—",
+          }];
+      } else {
+          const startDateDate = new Date();
+          if (teamTimeFilter === "Weekly") startDateDate.setDate(startDateDate.getDate() - 7);
+          if (teamTimeFilter === "Monthly") startDateDate.setMonth(startDateDate.getMonth() - 1);
+          if (teamTimeFilter === "Yearly") startDateDate.setFullYear(startDateDate.getFullYear() - 1);
+          
+          const startDateStr = `${startDateDate.getFullYear()}-${String(startDateDate.getMonth() + 1).padStart(2, '0')}-${String(startDateDate.getDate()).padStart(2, '0')}`;
+
+          return records.filter(r => r.userId === u.id && r.date >= startDateStr && r.date <= today).map(rec => ({
+              id: rec.id,
+              userId: u.id,
+              name: u.name,
+              role: u.role,
+              date: rec.date,
+              status: rec.status,
+              checkIn: rec.checkInTime || "—",
+              checkOut: rec.checkOutTime || "—",
+          }));
+      }
+    }).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+  }, [teamMembers, records, teamTimeFilter, today]);
+
+  const presentCount = filteredTeamRecords.filter(r => r.status === "Present" || r.status === "Break").length;
+  const lateCount = filteredTeamRecords.filter(r => r.status === "Late").length;
+  const absentCount = filteredTeamRecords.filter(r => r.status === "Absent").length;
+  const onLeaveCount = filteredTeamRecords.filter(r => r.status === "Leave").length;
+
+  // Pending Break Requests
+  const pendingRequests = breakRequests.filter(r => r.date === today && r.status === "Pending");
+
+  // My weekly log
+  const myRecords = records.filter(r => r.userId === currentUser?.id).slice(-5).reverse();
+
+  // Dynamic Month Stats
+  const currentMonthWorkingDays = useMemo(() => {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = now.getMonth();
+    const daysInMonth = new Date(year, month + 1, 0).getDate();
+    let workingDays = 0;
+    for (let i = 1; i <= daysInMonth; i++) {
+      // Mon - Sat are working days (Exclude Sunday = 0)
+      if (new Date(year, month, i).getDay() !== 0) workingDays++;
+    }
+    return workingDays;
+  }, []);
+
+  const myMonthRecords = useMemo(() => {
+    return records.filter(r => r.userId === currentUser?.id && r.date.startsWith(today.slice(0, 7)));
+  }, [records, currentUser, today]);
+
+  const monthPresent = myMonthRecords.filter(r => ["Present", "Break"].includes(r.status)).length;
+  const monthLate = myMonthRecords.filter(r => r.status === "Late").length;
+  const monthLeave = myMonthRecords.filter(r => r.status === "Leave").length;
+  
+  const totalAttended = monthPresent + monthLate;
+  const onTimePercent = totalAttended > 0 ? Math.round((monthPresent / totalAttended) * 100) : 100;
 
   return (
     <motion.div variants={stagger} initial="hidden" animate="show" className="space-y-6">
       {/* Header */}
       <motion.div variants={fadeUp}>
         <h1 className="text-2xl font-bold tracking-tight text-foreground">Attendance</h1>
-        <p className="mt-1 text-sm text-muted-foreground">Track daily check-in, breaks, and check-out for the whole team</p>
+        <p className="mt-1 text-sm text-muted-foreground">Track daily check-in, breaks, and check-out</p>
       </motion.div>
 
       {/* My status banner */}
@@ -127,9 +200,9 @@ export default function AttendancePage() {
           <p className="text-sm font-semibold text-foreground">{statusLabel[state]}</p>
           <p className="text-xs text-muted-foreground">
             {state === "not-checked-in" && "You haven't checked in yet today."}
-            {state === "checked-in" && `Checked in at ${checkInTime}`}
-            {state === "on-break" && `On break since ${breakStart}`}
-            {state === "checked-out" && `Checked out at ${checkOutTime}`}
+            {state === "checked-in" && `Checked in at ${myTodayRecord?.checkInTime}`}
+            {state === "on-break" && `On break since ${myTodayRecord?.breakStartTime}`}
+            {state === "checked-out" && `Checked out at ${myTodayRecord?.checkOutTime}`}
           </p>
         </div>
       </motion.div>
@@ -143,9 +216,9 @@ export default function AttendancePage() {
         </Button>
         <Button id="break-btn" variant="secondary" className="h-11 gap-2 rounded-lg px-5 text-sm font-medium"
           disabled={state === "not-checked-in" || state === "checked-out"}
-          onClick={handleBreak}>
+          onClick={() => state === "on-break" ? handleEndBreak() : setShowBreakModal(true)}>
           <Coffee className="h-4 w-4" />
-          {state === "on-break" ? "End Break" : "Break"}
+          {state === "on-break" ? "End Break" : "Request Break"}
         </Button>
         <Button id="check-out-btn" variant="secondary" className="h-11 gap-2 rounded-lg px-5 text-sm font-medium"
           disabled={state === "not-checked-in" || state === "on-break" || state === "checked-out"}
@@ -156,37 +229,68 @@ export default function AttendancePage() {
 
       {/* My stats */}
       <motion.div variants={fadeUp} className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <StatCard title="This Month" value="16/21" subtitle="days present" icon={CalendarClock} />
-        <StatCard title="On Time" value="94%" subtitle="arrival rate" icon={Clock} variant="primary" />
-        <StatCard title="Late Days" value="1" subtitle="this month" icon={CalendarClock} />
-        <StatCard title="Leaves" value="0" subtitle="this month" icon={CalendarClock} />
+        <StatCard title="This Month" value={`${totalAttended}/${currentMonthWorkingDays}`} subtitle="days present" icon={CalendarClock} />
+        <StatCard title="On Time" value={`${onTimePercent}%`} subtitle="arrival rate" icon={Clock} variant="primary" />
+        <StatCard title="Late Days" value={monthLate.toString()} subtitle="this month" icon={CalendarClock} />
+        <StatCard title="Leaves" value={monthLeave.toString()} subtitle="this month" icon={CalendarClock} />
       </motion.div>
+
+      {/* Break Request Modal */}
+      <AnimatePresence>
+        {showBreakModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+             <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }}
+                className="bg-card w-full max-w-sm rounded-xl border shadow-xl p-5">
+                <h3 className="text-lg font-bold">Request Break</h3>
+                <form onSubmit={handleBreakRequestSubmit} className="mt-4 space-y-3">
+                   <div>
+                       <label className="text-sm font-medium">Reason</label>
+                       <input value={breakReason} onChange={e => setBreakReason(e.target.value)} required 
+                         className="flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm" placeholder="Lunch, Coffee, etc." />
+                   </div>
+                   <div>
+                       <label className="text-sm font-medium">Session Time</label>
+                       <input value={breakDuration} onChange={e => setBreakDuration(e.target.value)} required 
+                         className="flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm" placeholder="30 mins, 1 hour..." />
+                   </div>
+                   <div className="flex gap-2 pt-2">
+                       <Button type="button" variant="outline" className="flex-1" onClick={() => setShowBreakModal(false)}>Cancel</Button>
+                       <Button type="submit" className="flex-1">Submit</Button>
+                   </div>
+                </form>
+             </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
 
       {/* My weekly log */}
       <motion.div variants={fadeUp} className="rounded-2xl bg-card shadow-card overflow-hidden">
         <div className="px-5 py-4 border-b">
-          <h2 className="text-base font-semibold text-foreground">My Week</h2>
+          <h2 className="text-base font-semibold text-foreground">Recent Attendance</h2>
         </div>
         <table className="w-full">
           <thead>
             <tr className="border-b">
-              <th className="px-5 py-3 text-left text-[11px] font-medium uppercase tracking-wider text-muted-foreground">Day</th>
+              <th className="px-5 py-3 text-left text-[11px] font-medium uppercase tracking-wider text-muted-foreground">Date</th>
               <th className="px-5 py-3 text-left text-[11px] font-medium uppercase tracking-wider text-muted-foreground">Status</th>
               <th className="px-5 py-3 text-left text-[11px] font-medium uppercase tracking-wider text-muted-foreground">Check In</th>
               <th className="px-5 py-3 text-left text-[11px] font-medium uppercase tracking-wider text-muted-foreground">Check Out</th>
             </tr>
           </thead>
           <tbody>
-            {weekAttendance.map((row) => (
-              <tr key={row.day} className="border-b last:border-0 transition-colors hover:bg-muted">
-                <td className="px-5 py-3 text-sm font-medium text-foreground">{row.day}</td>
+            {myRecords.map((row) => (
+              <tr key={row.id} className="border-b last:border-0 transition-colors hover:bg-muted">
+                <td className="px-5 py-3 text-sm font-medium text-foreground">{row.date}</td>
                 <td className="px-5 py-3">
                   <span className={`rounded-full px-2.5 py-0.5 text-[11px] font-medium ${statusBadge[row.status]}`}>{row.status}</span>
                 </td>
-                <td className="px-5 py-3 font-tabular text-sm text-muted-foreground">{row.checkIn}</td>
-                <td className="px-5 py-3 font-tabular text-sm text-muted-foreground">{row.checkOut}</td>
+                <td className="px-5 py-3 font-tabular text-sm text-muted-foreground">{row.checkInTime || "—"}</td>
+                <td className="px-5 py-3 font-tabular text-sm text-muted-foreground">{row.checkOutTime || "—"}</td>
               </tr>
             ))}
+            {myRecords.length === 0 && (
+                <tr><td colSpan={4} className="p-4 text-center text-sm text-muted-foreground">No recent records</td></tr>
+            )}
           </tbody>
         </table>
       </motion.div>
@@ -194,17 +298,55 @@ export default function AttendancePage() {
       {/* ─── TEAM ATTENDANCE (Admin / Controller only) ─── */}
       {canManage && (
         <>
+          {pendingRequests.length > 0 && (
+            <motion.div variants={fadeUp} className="rounded-2xl bg-amber-500/10 border border-amber-500/20 p-5">
+              <h2 className="text-base font-semibold text-amber-700 flex items-center gap-2 mb-3">
+                  <AlertTriangle className="h-5 w-5" /> Pending Break Requests ({pendingRequests.length})
+              </h2>
+              <div className="space-y-2">
+                 {pendingRequests.map(req => {
+                     const u = users.find(user => user.id === req.userId);
+                     return (
+                         <div key={req.id} className="flex items-center justify-between bg-white dark:bg-black/20 p-3 rounded-lg border">
+                             <div>
+                                 <p className="text-sm font-semibold">{u?.name}</p>
+                                 <p className="text-xs text-muted-foreground">Reason: {req.reason} | Time: {req.sessionTime}</p>
+                             </div>
+                             <div className="flex gap-2">
+                                 <Button size="sm" variant="outline" className="h-8 w-8 p-0 text-red-600" onClick={() => rejectBreak(req.id)}><X className="h-4 w-4" /></Button>
+                                 <Button size="sm" variant="outline" className="h-8 w-8 p-0 text-green-600" onClick={() => approveBreak(req.id)}><Check className="h-4 w-4" /></Button>
+                             </div>
+                         </div>
+                     )
+                 })}
+              </div>
+            </motion.div>
+          )}
+
           {/* Team summary cards */}
           <motion.div variants={fadeUp}>
-            <div className="mb-3 flex items-center gap-2">
-              <Users className="h-5 w-5 text-primary" />
-              <h2 className="text-base font-semibold text-foreground">
-                Team Daily Attendance — {new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })}
-              </h2>
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-4">
+              <div className="flex items-center gap-2">
+                <Users className="h-5 w-5 text-primary" />
+                <h2 className="text-base font-semibold text-foreground">
+                  Team Attendance Summary
+                </h2>
+              </div>
+              <div className="flex gap-2">
+                 {["Daily", "Weekly", "Monthly", "Yearly"].map(filter => (
+                     <button 
+                       key={filter} 
+                       onClick={() => setTeamTimeFilter(filter as TeamTimeFilter)}
+                       className={`px-3 py-1.5 rounded-full text-xs font-medium transition-all ${teamTimeFilter === filter ? "bg-foreground text-background" : "bg-muted text-muted-foreground hover:bg-border"}`}
+                     >
+                        {filter}
+                     </button>
+                 ))}
+              </div>
             </div>
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
               {[
-                { label: "Present", count: presentCount, icon: CheckCircle2, color: "text-green-600", bg: "bg-green-100 dark:bg-green-900/20" },
+                { label: "Present/Break", count: presentCount, icon: CheckCircle2, color: "text-green-600", bg: "bg-green-100 dark:bg-green-900/20" },
                 { label: "Late", count: lateCount, icon: AlertTriangle, color: "text-amber-600", bg: "bg-amber-100 dark:bg-amber-900/20" },
                 { label: "Absent", count: absentCount, icon: XCircle, color: "text-red-600", bg: "bg-red-100 dark:bg-red-900/20" },
                 { label: "On Leave", count: onLeaveCount, icon: CalendarClock, color: "text-muted-foreground", bg: "bg-muted" },
@@ -223,77 +365,75 @@ export default function AttendancePage() {
           {/* Per-person attendance table */}
           <motion.div variants={fadeUp} className="rounded-2xl bg-card shadow-card overflow-visible">
             <div className="px-5 py-4 border-b flex items-center justify-between">
-              <h2 className="text-base font-semibold text-foreground">Mark Attendance</h2>
-              <span className="text-xs text-muted-foreground">{teamRecords.length} members</span>
+              <h2 className="text-base font-semibold text-foreground">Attendance Records ({teamTimeFilter})</h2>
+              {isController && <span className="text-xs text-muted-foreground bg-muted px-2 py-1 rounded">View Only</span>}
             </div>
-            {teamRecords.length === 0 ? (
-              <div className="py-12 text-center text-sm text-muted-foreground">
-                No team members found. Add Controllers/Employees from <strong>Admin → Users</strong>.
-              </div>
-            ) : (
-              <table className="w-full">
+            <table className="w-full">
                 <thead>
                   <tr className="border-b">
                     <th className="px-5 py-3 text-left text-[11px] font-medium uppercase tracking-wider text-muted-foreground">Name</th>
-                    <th className="px-5 py-3 text-left text-[11px] font-medium uppercase tracking-wider text-muted-foreground hidden sm:table-cell">Role</th>
+                    <th className="px-5 py-3 text-left text-[11px] font-medium uppercase tracking-wider text-muted-foreground">Date</th>
                     <th className="px-5 py-3 text-left text-[11px] font-medium uppercase tracking-wider text-muted-foreground hidden md:table-cell">Check In</th>
+                    <th className="px-5 py-3 text-left text-[11px] font-medium uppercase tracking-wider text-muted-foreground hidden md:table-cell">Check Out</th>
                     <th className="px-5 py-3 text-left text-[11px] font-medium uppercase tracking-wider text-muted-foreground">Status</th>
-                    <th className="px-5 py-3 text-right text-[11px] font-medium uppercase tracking-wider text-muted-foreground">Mark</th>
+                    {isAdmin && teamTimeFilter === "Daily" && (
+                        <th className="px-5 py-3 text-right text-[11px] font-medium uppercase tracking-wider text-muted-foreground">Mark Admin</th>
+                    )}
                   </tr>
                 </thead>
                 <tbody>
-                  {teamRecords.map((rec) => (
-                    <tr key={rec.userId} className="border-b last:border-0 transition-colors hover:bg-muted/40">
+                  {filteredTeamRecords.map((rec, index) => (
+                    <tr key={`${rec.id}-${index}`} className="border-b last:border-0 transition-colors hover:bg-muted/40">
                       <td className="px-5 py-3">
                         <div className="flex items-center gap-2.5">
-                          <div className={`flex h-7 w-7 items-center justify-center rounded-full text-[11px] font-semibold ${rec.role === "controller"
-                              ? "bg-violet-100 text-violet-700 dark:bg-violet-900/20"
-                              : "bg-primary/10 text-primary"
-                            }`}>
+                          <div className="flex h-7 w-7 items-center justify-center rounded-full bg-primary/10 text-[11px] font-semibold text-primary">
                             {rec.name.slice(0, 2).toUpperCase()}
                           </div>
                           <p className="text-sm font-medium text-foreground">{rec.name}</p>
                         </div>
                       </td>
-                      <td className="px-5 py-3 hidden sm:table-cell">
-                        <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium capitalize ${rec.role === "controller"
-                            ? "bg-violet-100 text-violet-700 dark:bg-violet-900/20 dark:text-violet-400"
-                            : "bg-muted text-muted-foreground"
-                          }`}>
-                          {rec.role}
-                        </span>
+                      <td className="px-5 py-3 text-sm font-tabular text-muted-foreground">
+                        {rec.date}
                       </td>
                       <td className="px-5 py-3 text-sm font-tabular text-muted-foreground hidden md:table-cell">
                         {rec.checkIn}
+                      </td>
+                      <td className="px-5 py-3 text-sm font-tabular text-muted-foreground hidden md:table-cell">
+                        {rec.checkOut}
                       </td>
                       <td className="px-5 py-3">
                         <span className={`rounded-full px-2.5 py-0.5 text-[11px] font-medium ${statusBadge[rec.status]}`}>
                           {rec.status}
                         </span>
                       </td>
-                      <td className="px-5 py-3 text-right">
-                        {/* Quick mark buttons */}
-                        <div className="flex items-center justify-end gap-1.5">
-                          {STATUS_OPTIONS.map((s) => (
-                            <button
-                              key={s}
-                              onClick={() => updateMemberStatus(rec.userId, s)}
-                              title={`Mark ${s}`}
-                              className={`rounded-lg px-2 py-1 text-[10px] font-medium transition-colors border ${rec.status === s
-                                  ? "bg-foreground text-background border-foreground"
-                                  : "border-border text-muted-foreground hover:border-primary hover:text-primary"
-                                }`}
-                            >
-                              {s === "On Leave" ? "Leave" : s}
-                            </button>
-                          ))}
-                        </div>
-                      </td>
+                      {isAdmin && teamTimeFilter === "Daily" && (
+                        <td className="px-5 py-3 text-right">
+                          <div className="flex items-center justify-end gap-1.5">
+                            {STATUS_OPTIONS.map((s) => (
+                              <button
+                                key={s}
+                                onClick={() => {
+                                  updateMemberAttendance(rec.userId, rec.date, s);
+                                  toast.success(`${rec.name} marked as ${s}`);
+                                }}
+                                className={`rounded-lg px-2 py-1 text-[10px] font-medium transition-colors border ${rec.status === s
+                                    ? "bg-foreground text-background border-foreground"
+                                    : "border-border text-muted-foreground hover:border-primary hover:text-primary"
+                                  }`}
+                              >
+                                {s}
+                              </button>
+                            ))}
+                          </div>
+                        </td>
+                      )}
                     </tr>
                   ))}
+                  {filteredTeamRecords.length === 0 && (
+                      <tr><td colSpan={isAdmin && teamTimeFilter === "Daily" ? 6 : 5} className="p-4 text-center text-sm text-muted-foreground">No records found for this period</td></tr>
+                  )}
                 </tbody>
               </table>
-            )}
           </motion.div>
         </>
       )}

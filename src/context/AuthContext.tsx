@@ -16,7 +16,7 @@ export interface AppUser {
 interface AuthContextType {
     currentUser: AppUser | null;
     users: AppUser[];
-    login: (email: string, password: string, role: UserRole) => { success: boolean; error?: string };
+    login: (email: string, password: string) => { success: boolean; error?: string; role?: UserRole };
     logout: () => void;
     addUser: (user: Omit<AppUser, "id" | "createdAt">) => { success: boolean; error?: string };
     updateUser: (id: string, updates: Partial<AppUser>) => void;
@@ -27,26 +27,47 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | null>(null);
 
-const STORAGE_KEY = "adscroll360_users";
-const SESSION_KEY = "adscroll360_session";
+const STORAGE_KEY = "adscroll360_users_v3";
+const SESSION_KEY = "adscroll360_session_v3";
 
 const DEFAULT_ADMIN: AppUser = {
     id: "admin-001",
     name: "Basith",
     email: "basith@adscroll360.com",
-    password: "password",
+    password: "AAAAAAAAAA@123456789",
     role: "admin",
-    department: "Management",
-    position: "Core Admin",
+    department: "CEO",
+    position: "Admin Control",
     createdAt: new Date().toISOString(),
 };
+
+const INITIAL_TEAM: AppUser[] = [
+    DEFAULT_ADMIN,
+    {
+        id: "ctrl-001",
+        name: "Nafih",
+        email: "nafih@adscroll360.com",
+        password: "Nafih@123",
+        role: "controller",
+        position: "Project Manager",
+        department: "Management",
+        createdAt: new Date().toISOString(),
+    },
+    { id: "emp-001", name: "Aboobacker", email: "aboobacker@adscroll360.com", password: "Aboobacker@123", role: "employee", position: "Marketing Strategist", department: "Marketing", createdAt: new Date().toISOString() },
+    { id: "emp-002", name: "Fahad", email: "fahad@adscroll360.com", password: "Fahad@123", role: "employee", position: "Senior Graphic Designer", department: "Design", createdAt: new Date().toISOString() },
+    { id: "emp-003", name: "Ijaz", email: "ijaz@adscroll360.com", password: "Ijaz@123", role: "employee", position: "Video Editor", department: "Video", createdAt: new Date().toISOString() },
+    { id: "emp-004", name: "Ajmal", email: "ajmal@adscroll360.com", password: "Ajmal@123", role: "employee", position: "Content Strategist", department: "Content", createdAt: new Date().toISOString() },
+    { id: "emp-005", name: "Faiz", email: "faiz@adscroll360.com", password: "Faiz@123", role: "employee", position: "Video Editor", department: "Video", createdAt: new Date().toISOString() },
+    { id: "emp-006", name: "Shammas", email: "shammas@adscroll360.com", password: "Shammas@123", role: "employee", position: "Content Writer", department: "Content", createdAt: new Date().toISOString() },
+    { id: "emp-007", name: "Jazeel", email: "jazeel@adscroll360.com", password: "Jazeel@123", role: "employee", position: "Graphic Designer", department: "Design", createdAt: new Date().toISOString() },
+];
 
 function loadUsers(): AppUser[] {
     try {
         const saved = localStorage.getItem(STORAGE_KEY);
         if (saved) return JSON.parse(saved);
     } catch { }
-    return [DEFAULT_ADMIN];
+    return INITIAL_TEAM;
 }
 
 function saveUsers(users: AppUser[]) {
@@ -81,16 +102,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
     }, [currentUser, users]);
 
-    const login = (email: string, password: string, role: UserRole) => {
+    const login = (email: string, password: string) => {
         const found = users.find(
-            (u) => u.email.toLowerCase() === email.toLowerCase() && u.password === password && u.role === role
+            (u) => u.email.toLowerCase() === email.toLowerCase() && u.password === password
         );
         if (!found) {
-            return { success: false, error: "Invalid email, password, or role." };
+            return { success: false, error: "Invalid email or password." };
         }
         setCurrentUser(found);
         localStorage.setItem(SESSION_KEY, JSON.stringify(found));
-        return { success: true };
+        return { success: true, role: found.role };
     };
 
     const logout = () => {

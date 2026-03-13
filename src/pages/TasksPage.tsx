@@ -1,371 +1,290 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useMemo, memo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Plus, Clock, CheckCircle2, AlertCircle, Eye,
-  Trash2, X, ChevronDown, User,
+  Trash2, X, ChevronDown, User, MessageCircle, Link as LinkIcon, FileText, Send
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { stagger, fadeUp } from "@/lib/animations";
-import { toast } from "sonner";
+import { useTask, AppTask, TaskStatus } from "@/context/TaskContext";
 import { useAuth } from "@/context/AuthContext";
+import { useOutsideClick } from "@/hooks/useOutsideClick";
+import { toast } from "sonner";
 
-type TaskStatus = "Pending" | "In Progress" | "Completed" | "Approved";
-
-interface Task {
-  id: number;
-  title: string;
-  category: string;
-  assignedTo: string; // name of assignee
-  status: TaskStatus;
-  date: string;
-  time: string;
-  notes?: string;
-}
-
-const CATEGORIES = [
-  "Video Editing", "Content Writing", "Poster Design",
-  "Social Media", "SEO", "Other",
-];
-
+const CATEGORIES = ["Social Media", "Video SEO", "Thumbnail Design", "Shorts Editing", "Admin Support", "Marketing", "Strategy"];
 const STATUSES: TaskStatus[] = ["Pending", "In Progress", "Completed", "Approved"];
-const FILTER_TABS = ["All", "Pending", "In Progress", "Completed", "Approved"] as const;
-type FilterTab = (typeof FILTER_TABS)[number];
 
-const statusConfig: Record<TaskStatus, { color: string; icon: React.ElementType }> = {
-  Pending: { color: "bg-muted text-muted-foreground", icon: Clock },
-  "In Progress": { color: "bg-primary/15 text-primary", icon: AlertCircle },
-  Completed: { color: "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400", icon: CheckCircle2 },
-  Approved: { color: "bg-accent/15 text-accent", icon: Eye },
+const statusConfig = {
+  "Pending": { color: "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400", icon: Clock },
+  "In Progress": { color: "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400", icon: AlertCircle },
+  "Completed": { color: "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400", icon: CheckCircle2 },
+  "Approved": { color: "bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-400", icon: CheckCircle2 },
 };
 
-const initialTasks: Task[] = [
-  { id: 1, title: "Instagram Reel – Product Launch", category: "Video Editing", assignedTo: "Fahad", status: "In Progress", date: "Mar 12", time: "2h 15m" },
-  { id: 2, title: "Blog: 5 SEO Tips for 2026", category: "Content Writing", assignedTo: "Ajmal", status: "Completed", date: "Mar 12", time: "1h 30m" },
-  { id: 3, title: "Facebook Ad Creative – Spring Sale", category: "Poster Design", assignedTo: "Ijaz", status: "Pending", date: "Mar 12", time: "—" },
-  { id: 4, title: "LinkedIn Carousel – Agency Portfolio", category: "Poster Design", assignedTo: "Nafih", status: "Approved", date: "Mar 11", time: "3h 00m" },
-  { id: 5, title: "YouTube Thumbnail – Client Case Study", category: "Poster Design", assignedTo: "Fahad", status: "Approved", date: "Mar 11", time: "45m" },
-  { id: 6, title: "Twitter Thread – Marketing Trends", category: "Content Writing", assignedTo: "Ajmal", status: "Completed", date: "Mar 10", time: "1h 10m" },
-  { id: 7, title: "Short Reel – Behind the Scenes", category: "Video Editing", assignedTo: "Fahad", status: "Approved", date: "Mar 10", time: "2h 45m" },
-];
+type FilterTab = "All" | TaskStatus;
 
-const emptyForm = {
-  title: "", category: CATEGORIES[0], assignedTo: "",
-  status: "Pending" as TaskStatus, time: "", notes: "",
-};
+// --- Sub-component: ChatBox (Isolated for performance) ---
+const ChatBox = memo(({ taskId, messages, currentUser }: { taskId: string, messages: any[], currentUser: any }) => {
+    const { addMessage } = useTask();
+    const [chatMsg, setChatMsg] = useState("");
+    const scrollRef = useRef<HTMLDivElement>(null);
 
-// Outside-click hook
-function useOutsideClick(ref: React.RefObject<HTMLElement>, cb: () => void) {
-  useEffect(() => {
-    const handler = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) cb();
+    useEffect(() => {
+        if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    }, [messages.length]);
+
+    const handleSend = (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!chatMsg.trim()) return;
+        const res = addMessage(taskId, chatMsg);
+        if (res.success) setChatMsg("");
+        else toast.error(res.error);
     };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, [ref, cb]);
-}
+
+    return (
+      <div className="w-full md:w-1/2 flex flex-col h-[500px] md:h-auto border-t md:border-t-0">
+          <div className="p-4 border-b flex justify-between items-center bg-card/50">
+              <h3 className="font-semibold flex items-center gap-2"><MessageCircle className="h-4 w-4"/> Task Discussion</h3>
+          </div>
+          <div ref={scrollRef} className="flex-1 p-4 overflow-y-auto space-y-3 bg-muted/5 scroll-smooth">
+              {messages.length === 0 ? (
+                  <div className="text-center text-muted-foreground text-sm mt-10">No messages yet. Send a message to start discussion.</div>
+              ) : (
+                  messages.map(msg => {
+                      const isMe = msg.senderId === currentUser?.id;
+                      return (
+                          <div key={msg.id} className={`flex flex-col ${isMe ? 'items-end' : 'items-start'}`}>
+                              <div className={`px-3 py-2 rounded-xl text-sm max-w-[85%] ${isMe ? 'bg-primary text-primary-foreground' : 'bg-muted'}`}>
+                                  {msg.text}
+                              </div>
+                              <div className="text-[10px] text-muted-foreground mt-1 mx-1">
+                                  {!isMe && <span className="font-semibold">{msg.senderName} • </span>}
+                                  {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                              </div>
+                          </div>
+                      )
+                  })
+              )}
+          </div>
+          <form onSubmit={handleSend} className="p-3 border-t bg-card flex gap-2">
+              <Input value={chatMsg} onChange={e=>setChatMsg(e.target.value)} placeholder="Type a message..." className="flex-1 h-9 rounded-full px-4" />
+              <Button type="submit" size="icon" className="h-9 w-9 rounded-full shrink-0"><Send className="h-4 w-4"/></Button>
+          </form>
+      </div>
+    );
+});
+
+// --- Sub-component: ProofSection (Isolated for performance) ---
+const ProofSection = memo(({ task, currentUser }: { task: AppTask, currentUser: any }) => {
+    const { submitTaskProof } = useTask();
+    const [proofText, setProofText] = useState("");
+    const [proofUrl, setProofUrl] = useState("");
+
+    const handleProofSubmit = (e: React.FormEvent) => {
+        e.preventDefault();
+        const res = submitTaskProof(task.id, { textExplanation: proofText, urlLink: proofUrl });
+        if (res.success) {
+            toast.success("Proof submitted!");
+            setProofText(""); setProofUrl("");
+        } else toast.error(res.error);
+    };
+
+    return (
+        <div className="mt-8">
+            <h3 className="font-semibold text-lg flex items-center gap-2 mb-3"><FileText className="h-4 w-4 text-primary"/> Submission Proof</h3>
+            {task.submission ? (
+                <div className="p-4 bg-muted/30 border rounded-lg space-y-2 text-sm">
+                    {task.submission.textExplanation && <p><strong>Note:</strong> {task.submission.textExplanation}</p>}
+                    {task.submission.urlLink && <a href={task.submission.urlLink} target="_blank" rel="noreferrer" className="text-blue-500 hover:underline flex items-center gap-1"><LinkIcon className="h-3 w-3"/> Link Attachment</a>}
+                    <p className="text-xs text-muted-foreground mt-2">Submitted at {new Date(task.submission.submittedAt).toLocaleString()}</p>
+                </div>
+            ) : (
+                <div className="p-4 bg-muted/30 border border-dashed rounded-lg text-sm text-center text-muted-foreground">
+                    {currentUser?.role === "employee" ? "Submit your proof of work below." : "No proof submitted yet."}
+                </div>
+            )}
+
+            {currentUser?.role === "employee" && !task.submission && (
+                <form onSubmit={handleProofSubmit} className="mt-4 space-y-3">
+                    <textarea value={proofText} onChange={e => setProofText(e.target.value)}
+                        className="w-full text-sm p-3 border rounded-lg bg-background" rows={2} placeholder="Explain what you did..."></textarea>
+                    <Input value={proofUrl} onChange={e => setProofUrl(e.target.value)} type="url" placeholder="Paste URL link to work" className="h-9 text-sm" />
+                    <Button type="submit" className="w-full">Submit Work for Review</Button>
+                </form>
+            )}
+        </div>
+    );
+});
 
 export default function TasksPage() {
-  const { users } = useAuth();
-
-  // All non-admin users as assignable people
+  const { currentUser, users } = useAuth();
+  const { tasks, createTask, updateTaskStatus, deleteTask } = useTask();
   const assignees = users.filter((u) => u.role !== "admin");
 
-  const [tasks, setTasks] = useState<Task[]>(initialTasks);
   const [activeFilter, setActiveFilter] = useState<FilterTab>("All");
   const [showModal, setShowModal] = useState(false);
-  const [form, setForm] = useState(emptyForm);
-  const [formError, setFormError] = useState("");
-  const [openStatusMenu, setOpenStatusMenu] = useState<number | null>(null);
+  const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
+  const [openStatusMenu, setOpenStatusMenu] = useState<string | null>(null);
   const statusMenuRef = useRef<HTMLDivElement>(null);
+
+  const selectedTask = useMemo(() => selectedTaskId ? tasks.find(t => t.id === selectedTaskId) : null, [selectedTaskId, tasks]);
+
+  const [form, setForm] = useState({ title: "", category: CATEGORIES[0], assignedToId: "", status: "Pending" as TaskStatus, time: "", notes: "" });
 
   useOutsideClick(statusMenuRef, () => setOpenStatusMenu(null));
 
-  const filtered = activeFilter === "All" ? tasks : tasks.filter((t) => t.status === activeFilter);
+  const filtered = (activeFilter === "All" ? tasks : tasks.filter((t) => t.status === activeFilter))
+      .filter(t => currentUser?.role === "employee" ? t.assigneeId === currentUser.id : true);
 
   const handleOpen = () => {
-    setForm({ ...emptyForm, assignedTo: assignees[0]?.name ?? "" });
-    setFormError("");
+    setForm({ title: "", category: CATEGORIES[0], assignedToId: assignees[0]?.id || "", status: "Pending", time: "", notes: "" });
     setShowModal(true);
   };
-  const handleClose = () => setShowModal(false);
-
+  
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!form.title.trim()) { setFormError("Task title is required."); return; }
-    const dateStr = new Date().toLocaleDateString("en-US", { month: "short", day: "numeric" });
-    const newTask: Task = {
-      id: Date.now(),
-      title: form.title.trim(),
-      category: form.category,
-      assignedTo: form.assignedTo || "Unassigned",
-      status: form.status,
-      date: dateStr,
-      time: form.time.trim() || "—",
-      notes: form.notes.trim(),
-    };
-    setTasks((prev) => [newTask, ...prev]);
-    setShowModal(false);
-    toast.success("Task added!", { description: `"${newTask.title}" assigned to ${newTask.assignedTo}.` });
+    if (!form.title.trim()) return toast.error("Task title is required.");
+    const res = createTask({
+        title: form.title.trim(),
+        category: form.category,
+        assigneeId: form.assignedToId || (currentUser?.role === "employee" ? currentUser.id : ""),
+        assigneeName: users.find(u => u.id === form.assignedToId)?.name || (currentUser?.role === "employee" ? currentUser.name : "Unassigned"),
+        assignedById: currentUser!.id,
+        assignedByName: currentUser!.name,
+        type: "Individual",
+        status: form.status,
+        deadline: new Date(Date.now() + 7 * 86400000).toLocaleDateString(),
+        timeSpent: "0h",
+        notes: form.notes
+    });
+    if (res.success) { setShowModal(false); toast.success("Task created!"); }
+    else toast.error(res.error);
   };
 
-  const handleDelete = (id: number) => {
-    const task = tasks.find((t) => t.id === id);
-    setTasks((prev) => prev.filter((t) => t.id !== id));
-    toast.error("Task deleted", { description: task?.title });
-  };
-
-  const handleStatusChange = (id: number, newStatus: TaskStatus) => {
-    setTasks((prev) => prev.map((t) => (t.id === id ? { ...t, status: newStatus } : t)));
+  const handleStatusChange = (taskId: string, s: TaskStatus) => {
+    updateTaskStatus(taskId, s);
     setOpenStatusMenu(null);
-    toast.success("Status updated");
   };
 
   return (
     <>
       <motion.div variants={stagger} initial="hidden" animate="show" className="space-y-6">
-        {/* Header */}
         <motion.div variants={fadeUp} className="flex items-end justify-between">
           <div>
-            <h1 className="text-2xl font-bold tracking-tight text-foreground">Tasks</h1>
-            <p className="mt-1 text-sm text-muted-foreground">Submit and track your daily work</p>
+            <h1 className="text-2xl font-bold tracking-tight text-foreground">Task Management</h1>
+            <p className="mt-1 text-sm text-muted-foreground">Coordinate, track and discuss production tasks</p>
           </div>
-          <Button id="new-task-btn" className="h-10 gap-2 rounded-lg px-5 text-sm font-medium" onClick={handleOpen}>
-            <Plus className="h-4 w-4" /> New Task
-          </Button>
-        </motion.div>
-
-        {/* Filter tabs */}
-        <motion.div variants={fadeUp} className="flex flex-wrap gap-2">
-          {FILTER_TABS.map((filter) => {
-            const count = filter === "All" ? tasks.length : tasks.filter((t) => t.status === filter).length;
-            const isActive = activeFilter === filter;
-            return (
-              <button
-                key={filter}
-                id={`filter-${filter.replace(" ", "-").toLowerCase()}`}
-                onClick={() => setActiveFilter(filter)}
-                className={`inline-flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-xs font-medium transition-all duration-200 ${isActive
-                    ? "bg-foreground text-background shadow-sm"
-                    : "bg-muted text-muted-foreground hover:bg-border hover:text-foreground"
-                  }`}
-              >
-                {filter}
-                <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${isActive ? "bg-background/20 text-background" : "bg-background text-muted-foreground"
-                  }`}>{count}</span>
-              </button>
-            );
-          })}
-        </motion.div>
-
-        {/* Task list */}
-        <motion.div variants={fadeUp} className="rounded-2xl bg-card shadow-card overflow-visible">
-          {filtered.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-16 text-center">
-              <div className="mb-3 flex h-14 w-14 items-center justify-center rounded-2xl bg-muted">
-                <CheckCircle2 className="h-7 w-7 text-muted-foreground" />
-              </div>
-              <p className="font-medium text-foreground">No tasks found</p>
-              <p className="mt-1 text-sm text-muted-foreground">
-                {activeFilter === "All" ? "Add your first task using the button above." : `No tasks with status "${activeFilter}".`}
-              </p>
-            </div>
-          ) : (
-            <table className="w-full">
-              <thead>
-                <tr className="border-b">
-                  <th className="px-5 py-3 text-left text-[11px] font-medium uppercase tracking-wider text-muted-foreground">Task</th>
-                  <th className="px-5 py-3 text-left text-[11px] font-medium uppercase tracking-wider text-muted-foreground hidden sm:table-cell">Assigned To</th>
-                  <th className="px-5 py-3 text-left text-[11px] font-medium uppercase tracking-wider text-muted-foreground hidden md:table-cell">Category</th>
-                  <th className="px-5 py-3 text-left text-[11px] font-medium uppercase tracking-wider text-muted-foreground hidden md:table-cell">Date</th>
-                  <th className="px-5 py-3 text-right text-[11px] font-medium uppercase tracking-wider text-muted-foreground hidden md:table-cell">Time</th>
-                  <th className="px-5 py-3 text-right text-[11px] font-medium uppercase tracking-wider text-muted-foreground">Status</th>
-                  <th className="px-5 py-3 w-10"></th>
-                </tr>
-              </thead>
-              <tbody>
-                <AnimatePresence mode="popLayout">
-                  {filtered.map((task) => {
-                    const config = statusConfig[task.status];
-                    return (
-                      <motion.tr
-                        key={task.id}
-                        layout
-                        initial={{ opacity: 0, y: -6 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        exit={{ opacity: 0, x: -20, transition: { duration: 0.2 } }}
-                        className="border-b last:border-0 transition-colors hover:bg-muted/50 group"
-                      >
-                        <td className="px-5 py-3">
-                          <p className="text-sm font-medium text-foreground">{task.title}</p>
-                          {task.notes && <p className="mt-0.5 text-xs text-muted-foreground truncate max-w-xs">{task.notes}</p>}
-                        </td>
-                        <td className="px-5 py-3 hidden sm:table-cell">
-                          <div className="flex items-center gap-1.5">
-                            <div className="flex h-5 w-5 items-center justify-center rounded-full bg-primary/10 text-[9px] font-bold text-primary">
-                              {task.assignedTo.slice(0, 2).toUpperCase()}
-                            </div>
-                            <span className="text-sm text-muted-foreground">{task.assignedTo}</span>
-                          </div>
-                        </td>
-                        <td className="px-5 py-3 text-sm text-muted-foreground hidden md:table-cell">{task.category}</td>
-                        <td className="px-5 py-3 font-tabular text-sm text-muted-foreground hidden md:table-cell">{task.date}</td>
-                        <td className="px-5 py-3 text-right font-tabular text-sm text-muted-foreground hidden md:table-cell">{task.time}</td>
-                        {/* Status dropdown — rendered outside table flow */}
-                        <td className="px-5 py-3 text-right">
-                          <div className="relative inline-block" ref={openStatusMenu === task.id ? statusMenuRef : null}>
-                            <button
-                              onClick={() => setOpenStatusMenu(openStatusMenu === task.id ? null : task.id)}
-                              className={`inline-flex cursor-pointer items-center gap-1 rounded-full px-2.5 py-0.5 text-[11px] font-medium ${config.color}`}
-                            >
-                              {task.status}
-                              <ChevronDown className="h-3 w-3 opacity-60" />
-                            </button>
-                            {openStatusMenu === task.id && (
-                              <div className="absolute right-0 top-7 z-[200] w-36 rounded-xl border bg-card shadow-2xl">
-                                {STATUSES.map((s) => (
-                                  <button
-                                    key={s}
-                                    onClick={() => handleStatusChange(task.id, s)}
-                                    className={`flex w-full items-center gap-2 px-3 py-2 text-xs font-medium transition-colors first:rounded-t-xl last:rounded-b-xl hover:bg-muted ${task.status === s ? "text-primary" : "text-foreground"
-                                      }`}
-                                  >
-                                    <span className={`h-2 w-2 rounded-full ${statusConfig[s].color.split(" ")[0]}`} />
-                                    {s}
-                                  </button>
-                                ))}
-                              </div>
-                            )}
-                          </div>
-                        </td>
-                        <td className="px-5 py-3 text-right">
-                          <button
-                            onClick={() => handleDelete(task.id)}
-                            className="opacity-0 group-hover:opacity-100 transition-opacity p-1.5 rounded-md text-muted-foreground hover:text-destructive hover:bg-destructive/10"
-                            title="Delete task"
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </button>
-                        </td>
-                      </motion.tr>
-                    );
-                  })}
-                </AnimatePresence>
-              </tbody>
-            </table>
+          {currentUser?.role !== "employee" && (
+            <Button className="h-10 gap-2 rounded-lg" onClick={handleOpen}><Plus className="h-4 w-4" /> Create Task</Button>
           )}
         </motion.div>
 
-        {/* Summary */}
-        <motion.div variants={fadeUp} className="flex items-center justify-between text-xs text-muted-foreground px-1">
-          <span>Showing <span className="font-medium text-foreground">{filtered.length}</span> of <span className="font-medium text-foreground">{tasks.length}</span> tasks</span>
-          <span>{tasks.filter((t) => t.status === "Completed" || t.status === "Approved").length} completed</span>
+        <motion.div variants={fadeUp} className="flex gap-2 border-b">
+          {(["All", ...STATUSES] as const).map((tab) => (
+            <button key={tab} onClick={() => setActiveFilter(tab)}
+              className={`pb-2.5 px-4 text-sm font-medium transition-all relative ${activeFilter === tab ? "text-primary" : "text-muted-foreground hover:text-foreground"}`}>
+              {tab} {activeFilter === tab && <motion.div layoutId="filter-underline" className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary" />}
+            </button>
+          ))}
+        </motion.div>
+
+        <motion.div variants={fadeUp} className="rounded-2xl bg-card shadow-card overflow-hidden">
+          <table className="w-full">
+            <thead>
+              <tr className="border-b">
+                <th className="px-5 py-3 text-left text-[11px] font-medium uppercase tracking-wider text-muted-foreground">Task Details</th>
+                <th className="px-5 py-3 text-left text-[11px] font-medium uppercase tracking-wider text-muted-foreground">Assignee</th>
+                <th className="px-5 py-3 text-left text-[11px] font-medium uppercase tracking-wider text-muted-foreground">Deadline</th>
+                <th className="px-5 py-3 text-right text-[11px] font-medium uppercase tracking-wider text-muted-foreground">Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.map((task) => (
+                <motion.tr key={task.id} layout initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+                    className="border-b last:border-0 transition-colors hover:bg-muted/50 group cursor-pointer"
+                    onClick={() => setSelectedTaskId(task.id)}>
+                    <td className="px-5 py-3">
+                        <p className="text-sm font-medium text-foreground">{task.title}</p>
+                        <p className="mt-0.5 text-xs text-muted-foreground truncate max-w-xs">{task.category}</p>
+                    </td>
+                    <td className="px-5 py-3 capitalize text-sm text-foreground font-medium">{task.assigneeName}</td>
+                    <td className="px-5 py-3 text-sm text-muted-foreground font-medium">{task.deadline}</td>
+                    <td className="px-5 py-3 text-right">
+                        <div className="relative inline-block" onClick={(e) => e.stopPropagation()}>
+                            <button onClick={() => setOpenStatusMenu(openStatusMenu === task.id ? null : task.id)}
+                            className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-bold border transition-all ${statusConfig[task.status].color} border-transparent hover:border-current/20`}>
+                            {task.status} <ChevronDown className="h-3 w-3" />
+                            </button>
+                            {openStatusMenu === task.id && (
+                                <div ref={statusMenuRef} className="absolute right-0 top-7 z-[200] w-36 rounded-xl border bg-card shadow-2xl overflow-hidden py-1">
+                                {STATUSES.filter(s => currentUser?.role !== "employee" || s !== "Approved").map((s) => (
+                                    <button key={s} onClick={() => handleStatusChange(task.id, s)}
+                                    className="flex w-full items-center gap-2 px-3 py-2 text-xs font-medium hover:bg-muted text-foreground">
+                                    <span className={`h-2 w-2 rounded-full ${statusConfig[s].color.split(" ")[0]}`} /> {s}
+                                    </button>
+                                ))}
+                                </div>
+                            )}
+                        </div>
+                    </td>
+                </motion.tr>
+              ))}
+              {filtered.length === 0 && (
+                <tr className="border-none">
+                    <td colSpan={4} className="px-6 py-20 text-center text-muted-foreground italic text-sm">No tasks found in this category.</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
         </motion.div>
       </motion.div>
 
-      {/* ── New Task Modal ─────────────────────────────────────────────── */}
+      {/* Creation Modal */}
       <AnimatePresence>
         {showModal && (
           <>
-            <motion.div key="backdrop" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-              onClick={handleClose} className="fixed inset-0 z-40 bg-black/40 backdrop-blur-sm" />
-            <motion.div key="modal"
-              initial={{ opacity: 0, scale: 0.95, y: 20 }} animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.95, y: 20 }}
-              transition={{ type: "spring", stiffness: 400, damping: 30 }}
-              className="fixed inset-0 z-50 flex items-center justify-center p-4"
-            >
-              <div className="w-full max-w-md rounded-2xl bg-card shadow-2xl border border-border max-h-[90vh] overflow-y-auto">
-                <div className="flex items-center justify-between border-b px-6 py-4">
-                  <div>
-                    <h2 className="text-base font-semibold text-foreground">Add New Task</h2>
-                    <p className="text-xs text-muted-foreground mt-0.5">Fill in the details and assign to a team member</p>
-                  </div>
-                  <button onClick={handleClose} className="flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted">
-                    <X className="h-4 w-4" />
-                  </button>
-                </div>
-                <form onSubmit={handleSubmit} className="px-6 py-5 space-y-4">
-                  {/* Title */}
-                  <div className="space-y-1.5">
-                    <Label htmlFor="task-title">Task Title <span className="text-destructive">*</span></Label>
-                    <Input id="task-title" placeholder="e.g. Instagram Reel – Product Launch"
-                      value={form.title}
-                      onChange={(e) => { setForm({ ...form, title: e.target.value }); setFormError(""); }}
-                      className="h-9" autoFocus />
-                    {formError && <p className="text-xs text-destructive">{formError}</p>}
-                  </div>
-
-                  {/* Assign To */}
-                  <div className="space-y-1.5">
-                    <Label htmlFor="task-assign" className="flex items-center gap-1.5">
-                      <User className="h-3.5 w-3.5 text-muted-foreground" />
-                      Assign To
-                    </Label>
-                    {assignees.length > 0 ? (
-                      <select id="task-assign" value={form.assignedTo}
-                        onChange={(e) => setForm({ ...form, assignedTo: e.target.value })}
-                        className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                      >
-                        <option value="">— Unassigned —</option>
-                        {assignees.map((u) => (
-                          <option key={u.id} value={u.name}>
-                            {u.name} ({u.role === "controller" ? "Controller" : "Employee"})
-                          </option>
-                        ))}
-                      </select>
-                    ) : (
-                      <div className="flex h-9 items-center rounded-md border border-dashed border-border bg-muted/50 px-3 text-xs text-muted-foreground gap-2">
-                        <User className="h-3.5 w-3.5" />
-                        No team members yet — add from <strong className="text-foreground ml-1">Admin → Users</strong>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Category & Status */}
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="space-y-1.5">
-                      <Label htmlFor="task-category">Category</Label>
-                      <select id="task-category" value={form.category}
-                        onChange={(e) => setForm({ ...form, category: e.target.value })}
-                        className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring">
-                        {CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
-                      </select>
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setShowModal(false)} className="fixed inset-0 z-[100] bg-black/40 backdrop-blur-sm" />
+            <motion.div initial={{ opacity: 0, scale: 0.95, y: 20 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95, y: 20 }} className="fixed inset-0 z-[101] flex items-center justify-center p-4">
+              <div className="w-full max-w-md bg-card rounded-2xl shadow-2xl border">
+                <div className="px-6 py-4 border-b flex justify-between items-center"><h2 className="font-bold">Create New Task</h2><button onClick={() => setShowModal(false)}><X className="h-5 w-5"/></button></div>
+                <form onSubmit={handleSubmit} className="p-6 space-y-4">
+                    <div className="space-y-1.5 font-medium"><Label>Task Title</Label><Input value={form.title} onChange={e=>setForm({...form, title: e.target.value})} placeholder="e.g. Design YouTube Thumbnail" /></div>
+                    <div className="grid grid-cols-2 gap-4">
+                        <div className="space-y-1.5"><Label>Category</Label><select value={form.category} onChange={e=>setForm({...form, category: e.target.value})} className="flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm">{CATEGORIES.map(c=><option key={c} value={c}>{c}</option>)}</select></div>
+                        <div className="space-y-1.5"><Label>Assign To</Label><select value={form.assignedToId} onChange={e=>setForm({...form, assignedToId: e.target.value})} className="flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm"><option value="">Select Employee...</option>{assignees.map(a=><option key={a.id} value={a.id}>{a.name}</option>)}</select></div>
                     </div>
-                    <div className="space-y-1.5">
-                      <Label htmlFor="task-status">Status</Label>
-                      <select id="task-status" value={form.status}
-                        onChange={(e) => setForm({ ...form, status: e.target.value as TaskStatus })}
-                        className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring">
-                        {STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
-                      </select>
-                    </div>
-                  </div>
-
-                  {/* Time */}
-                  <div className="space-y-1.5">
-                    <Label htmlFor="task-time">Time Spent</Label>
-                    <Input id="task-time" placeholder="e.g. 2h 30m (optional)"
-                      value={form.time} onChange={(e) => setForm({ ...form, time: e.target.value })} className="h-9" />
-                  </div>
-
-                  {/* Notes */}
-                  <div className="space-y-1.5">
-                    <Label htmlFor="task-notes">Notes</Label>
-                    <textarea id="task-notes" rows={2} placeholder="Any additional notes… (optional)"
-                      value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })}
-                      className="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring resize-none" />
-                  </div>
-
-                  <div className="flex gap-2 pt-1">
-                    <Button type="button" variant="outline" className="flex-1 h-9" onClick={handleClose}>Cancel</Button>
-                    <Button type="submit" className="flex-1 h-9 gap-1.5"><Plus className="h-4 w-4" /> Add Task</Button>
-                  </div>
+                    <Button type="submit" className="w-full h-10">Create Task & Send Notify</Button>
                 </form>
               </div>
             </motion.div>
           </>
+        )}
+      </AnimatePresence>
+
+      {/* Task Detail Modal */}
+      <AnimatePresence>
+        {selectedTask && (
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 overflow-y-auto">
+              <div className="w-full max-w-3xl bg-card rounded-2xl border shadow-2xl my-8 relative flex flex-col md:flex-row min-h-[500px] overflow-hidden">
+                  <div className="w-full md:w-1/2 p-6 bg-muted/10">
+                      <div className="flex justify-between items-start mb-4">
+                          <h2 className="text-xl font-bold pr-4">{selectedTask.title}</h2>
+                          <button onClick={() => setSelectedTaskId(null)} className="md:hidden"><X className="h-5 w-5" /></button>
+                      </div>
+                      <div className="space-y-4 text-sm font-medium">
+                          <div><span className="text-muted-foreground mr-2">Status:</span> <span className={`px-2 py-0.5 rounded text-[11px] font-bold ${statusConfig[selectedTask.status].color}`}>{selectedTask.status}</span></div>
+                          <div><span className="text-muted-foreground mr-2">Category:</span> {selectedTask.category}</div>
+                          <div><span className="text-muted-foreground mr-2">Deadline:</span> {selectedTask.deadline}</div>
+                          <div className="pt-4 border-t"><span className="block text-muted-foreground mb-1">Internal Notes:</span> <p className="text-xs italic text-muted-foreground">{selectedTask.notes || "No additional notes."}</p></div>
+                      </div>
+                      <ProofSection task={selectedTask} currentUser={currentUser} />
+                  </div>
+                  <ChatBox taskId={selectedTask.id} messages={selectedTask.messages} currentUser={currentUser} />
+                  <button onClick={() => setSelectedTaskId(null)} className="absolute top-4 right-4 hidden md:block text-muted-foreground hover:text-foreground"><X className="h-5 w-5"/></button>
+              </div>
+            </motion.div>
         )}
       </AnimatePresence>
     </>

@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { MessageSquare, Plus, Clock, X, Trash2, AlertTriangle } from "lucide-react";
 import { toast } from "sonner";
+import { useAuth } from "@/context/AuthContext";
 
 interface Standup {
   id: number;
@@ -17,44 +18,19 @@ interface Standup {
   blockers: string;
 }
 
-const EMPLOYEES = ["Fahad", "Ijaz", "Ajmal", "Nafih", "Aboobacker", "Naimuddin"];
-
-const initialStandups: Standup[] = [
-  {
-    id: 1, employee: "Fahad", date: "Mar 13", time: "9:35 AM",
-    yesterday: "Completed product launch reel editing",
-    today: "Start spring sale video concept",
-    blockers: "None",
-  },
-  {
-    id: 2, employee: "Ijaz", date: "Mar 13", time: "9:36 AM",
-    yesterday: "Finished LinkedIn carousel designs",
-    today: "Facebook ad creatives for spring campaign",
-    blockers: "Waiting for copy from content team",
-  },
-  {
-    id: 3, employee: "Ajmal", date: "Mar 13", time: "9:37 AM",
-    yesterday: "Published SEO blog post",
-    today: "Write social media captions for the week",
-    blockers: "None",
-  },
-  {
-    id: 4, employee: "Aboobacker", date: "Mar 12", time: "9:35 AM",
-    yesterday: "Reviewed campaign performance metrics",
-    today: "Plan next week's content calendar",
-    blockers: "Need client feedback on Q1 report",
-  },
-];
-
-const emptyForm = { employee: EMPLOYEES[0], yesterday: "", today: "", blockers: "None" };
+const initialStandups: Standup[] = [];
 
 export default function StandupsPage() {
+  const { users } = useAuth();
+  const activeEmployees = users.filter(u => u.role === "employee").map(u => u.name);
+  const employeeCount = activeEmployees.length;
+
   const [standups, setStandups] = useState<Standup[]>(initialStandups);
   const [showModal, setShowModal] = useState(false);
-  const [form, setForm] = useState(emptyForm);
+  const [form, setForm] = useState({ employee: activeEmployees[0] || "", yesterday: "", today: "", blockers: "None" });
   const [formError, setFormError] = useState("");
 
-  const openAdd = () => { setForm(emptyForm); setFormError(""); setShowModal(true); };
+  const openAdd = () => { setForm({ employee: activeEmployees[0] || "", yesterday: "", today: "", blockers: "None" }); setFormError(""); setShowModal(true); };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -102,14 +78,14 @@ export default function StandupsPage() {
               Today's Standup — {new Date().toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })}
             </p>
             <p className="text-xs text-muted-foreground">
-              {todayCount} of {EMPLOYEES.length} employees have submitted responses
+              {todayCount} of {employeeCount} employees have submitted responses
             </p>
           </div>
           {/* Missing employees */}
-          {todayCount < EMPLOYEES.length && (
+          {todayCount < employeeCount && (
             <div className="flex items-center gap-1.5 text-xs text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 rounded-lg px-3 py-1.5">
               <AlertTriangle className="h-3.5 w-3.5" />
-              {EMPLOYEES.length - todayCount} pending
+              {employeeCount - todayCount} pending
             </div>
           )}
         </motion.div>
@@ -199,7 +175,7 @@ export default function StandupsPage() {
                     <select id="standup-employee" value={form.employee}
                       onChange={(e) => setForm({ ...form, employee: e.target.value })}
                       className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring">
-                      {EMPLOYEES.map((emp) => <option key={emp} value={emp}>{emp}</option>)}
+                      {activeEmployees.map((emp) => <option key={emp} value={emp}>{emp}</option>)}
                     </select>
                   </div>
                   <div className="space-y-1.5">

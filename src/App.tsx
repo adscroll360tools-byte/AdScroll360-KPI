@@ -4,6 +4,10 @@ import { Toaster as Sonner } from "@/components/ui/sonner";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AuthProvider, useAuth, UserRole } from "@/context/AuthContext";
+import { AttendanceProvider } from "@/context/AttendanceContext";
+import { TaskProvider } from "@/context/TaskContext";
+import { KPIProvider } from "@/context/KPIContext";
+import { RewardProvider } from "@/context/RewardContext";
 
 // Core Admin (admin) layout + pages
 import { AppLayout } from "@/components/AppLayout";
@@ -32,6 +36,7 @@ import PortalSettingsPage from "./pages/portal/PortalSettingsPage";
 
 import LoginPage from "./pages/LoginPage";
 import NotFound from "./pages/NotFound";
+import { GlobalElements } from "./components/GlobalElements";
 
 const queryClient = new QueryClient();
 
@@ -62,10 +67,12 @@ function RootRedirect() {
 
 function AppRoutes() {
   return (
-    <Routes>
-      {/* Public */}
-      <Route path="/login" element={<LoginPage />} />
-      <Route path="/" element={<RootRedirect />} />
+    <>
+      <GlobalElements />
+      <Routes>
+        {/* Public */}
+        <Route path="/login" element={<LoginPage />} />
+        <Route path="/" element={<RootRedirect />} />
 
       {/* ── Core Admin ──────────────────────────────────────── */}
       <Route element={<RequireAuth role="admin"><AppLayout /></RequireAuth>}>
@@ -104,6 +111,7 @@ function AppRoutes() {
 
       <Route path="*" element={<NotFound />} />
     </Routes>
+    </>
   );
 }
 
@@ -114,7 +122,15 @@ const App = () => (
       <Sonner />
       <BrowserRouter>
         <AuthProvider>
-          <AppRoutes />
+          <AttendanceProvider>
+            <TaskProvider>
+              <KPIProvider>
+                <RewardProvider>
+                  <AppRoutes />
+                </RewardProvider>
+              </KPIProvider>
+            </TaskProvider>
+          </AttendanceProvider>
         </AuthProvider>
       </BrowserRouter>
     </TooltipProvider>

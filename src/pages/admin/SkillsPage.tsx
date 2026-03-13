@@ -7,6 +7,7 @@ import { Label } from "@/components/ui/label";
 import { BookOpen, Plus, X, Trash2 } from "lucide-react";
 import { KPIProgressBar } from "@/components/KPIProgressBar";
 import { toast } from "sonner";
+import { useAuth } from "@/context/AuthContext";
 
 interface SkillEntry {
   id: number;
@@ -23,26 +24,18 @@ const roleSkills: Record<string, string[]> = {
   "Content Writer": ["Hook Writing", "SEO Captions", "Copywriting", "Storytelling"],
 };
 
-const EMPLOYEES = ["Fahad", "Ijaz", "Ajmal", "Nafih", "Aboobacker", "Naimuddin"];
-
-const initialSkills: SkillEntry[] = [
-  { id: 1, employee: "Fahad", role: "Video Editor", skill: "Color Grading", progress: 75, target: 100 },
-  { id: 2, employee: "Ijaz", role: "Graphic Designer", skill: "Motion Graphics", progress: 60, target: 100 },
-  { id: 3, employee: "Ajmal", role: "Content Writer", skill: "SEO Captions", progress: 85, target: 100 },
-  { id: 4, employee: "Nafih", role: "Project Manager", skill: "Agile Methods", progress: 90, target: 100 },
-  { id: 5, employee: "Aboobacker", role: "Marketing Lead", skill: "AI Tools", progress: 45, target: 100 },
-  { id: 6, employee: "Naimuddin", role: "Business Analyst", skill: "Data Visualization", progress: 70, target: 100 },
-];
-
-const emptyForm = { employee: EMPLOYEES[0], role: "", skill: "", progress: 50, target: 100 };
+const initialSkills: SkillEntry[] = [];
 
 export default function SkillsPage() {
+  const { users } = useAuth();
+  const activeEmployees = users.filter(u => u.role === "employee").map(u => u.name);
+
   const [skills, setSkills] = useState<SkillEntry[]>(initialSkills);
   const [showModal, setShowModal] = useState(false);
-  const [form, setForm] = useState(emptyForm);
+  const [form, setForm] = useState({ employee: activeEmployees[0] || "", role: "", skill: "", progress: 50, target: 100 });
   const [formError, setFormError] = useState("");
 
-  const openAdd = () => { setForm(emptyForm); setFormError(""); setShowModal(true); };
+  const openAdd = () => { setForm({ employee: activeEmployees[0] || "", role: "", skill: "", progress: 50, target: 100 }); setFormError(""); setShowModal(true); };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -167,7 +160,7 @@ export default function SkillsPage() {
                       <select id="skill-employee" value={form.employee}
                         onChange={(e) => setForm({ ...form, employee: e.target.value })}
                         className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring">
-                        {EMPLOYEES.map((emp) => <option key={emp} value={emp}>{emp}</option>)}
+                        {activeEmployees.map((emp) => <option key={emp} value={emp}>{emp}</option>)}
                       </select>
                     </div>
                     <div className="space-y-1.5">

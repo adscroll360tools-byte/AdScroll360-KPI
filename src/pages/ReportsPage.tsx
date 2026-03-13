@@ -15,29 +15,11 @@ import {
 } from "recharts";
 
 /* ─── Data ─────────────────────────────────────────────────── */
-const monthlyData = [
-  { month: "Oct", tasks: 120, score: 78 },
-  { month: "Nov", tasks: 135, score: 82 },
-  { month: "Dec", tasks: 110, score: 75 },
-  { month: "Jan", tasks: 142, score: 85 },
-  { month: "Feb", tasks: 155, score: 88 },
-  { month: "Mar", tasks: 98, score: 84 },
-];
+const monthlyData: any[] = [];
 
-const departmentData = [
-  { dept: "Content", completed: 45, target: 55 },
-  { dept: "Design", completed: 28, target: 35 },
-  { dept: "Video", completed: 16, target: 22 },
-];
+const departmentData: any[] = [];
 
-const employeePerf = [
-  { name: "Fahad", score: 92 },
-  { name: "Ijaz", score: 88 },
-  { name: "Nafih", score: 85 },
-  { name: "Ajmal", score: 82 },
-  { name: "Aboobacker", score: 79 },
-  { name: "Naimuddin", score: 76 },
-];
+const employeePerf: any[] = [];
 
 /* ─── Daily Attendance Data ─────────────────────────────────── */
 interface AttendanceRecord {
@@ -50,15 +32,7 @@ interface AttendanceRecord {
   tasks: number;
 }
 
-const todayAttendance: AttendanceRecord[] = [
-  { name: "Ahmed (Controller)", role: "Controller", checkIn: "8:55 AM", checkOut: "—", status: "Present", hours: "—", tasks: 0 },
-  { name: "Fahad", role: "Employee", checkIn: "9:00 AM", checkOut: "6:00 PM", status: "Present", hours: "9h 0m", tasks: 4 },
-  { name: "Ijaz", role: "Employee", checkIn: "9:18 AM", checkOut: "6:05 PM", status: "Late", hours: "8h 47m", tasks: 3 },
-  { name: "Ajmal", role: "Employee", checkIn: "9:02 AM", checkOut: "—", status: "Present", hours: "—", tasks: 2 },
-  { name: "Nafih", role: "Employee", checkIn: "8:50 AM", checkOut: "5:50 PM", status: "Present", hours: "9h 0m", tasks: 5 },
-  { name: "Aboobacker", role: "Employee", checkIn: "—", checkOut: "—", status: "On Leave", hours: "—", tasks: 0 },
-  { name: "Naimuddin", role: "Employee", checkIn: "9:05 AM", checkOut: "—", status: "Break", hours: "—", tasks: 3 },
-];
+const todayAttendance: AttendanceRecord[] = [];
 
 const statusMeta: Record<string, { color: string; icon: React.ElementType }> = {
   "Present": { color: "bg-green-100 text-green-700 dark:bg-green-900/20 dark:text-green-400", icon: CheckCircle2 },

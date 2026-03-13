@@ -18,11 +18,7 @@ const navItems = [
     { label: "Settings", to: "/controller/settings", icon: Settings },
 ];
 
-const NOTIFICATIONS = [
-    { id: 1, title: "New Employee Added", desc: "A new employee has been added to your team.", time: "5m ago", icon: ClipboardCheck, color: "text-primary bg-primary/10" },
-    { id: 2, title: "Task Pending Approval", desc: "Fahad submitted a task for review.", time: "1h ago", icon: ClipboardCheck, color: "text-violet-600 bg-violet-100 dark:bg-violet-900/20" },
-    { id: 3, title: "KPI Target Updated", desc: "Monthly content KPI changed to 55.", time: "2h ago", icon: Target, color: "text-amber-600 bg-amber-100 dark:bg-amber-900/20" },
-];
+const NOTIFICATIONS: any[] = [];
 
 export function ControllerLayout() {
     const { currentUser, logout } = useAuth();
