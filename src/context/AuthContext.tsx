@@ -1,4 +1,5 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from "react";
+import { supabase } from "@/lib/supabase";
 
 export type UserRole = "admin" | "controller" | "employee";
 
@@ -16,9 +17,9 @@ export interface AppUser {
 interface AuthContextType {
     currentUser: AppUser | null;
     users: AppUser[];
-    login: (email: string, password: string) => { success: boolean; error?: string; role?: UserRole };
+    login: (email: string, password: string) => Promise<{ success: boolean; error?: string; role?: UserRole }>;
     logout: () => void;
-    addUser: (user: Omit<AppUser, "id" | "createdAt">) => { success: boolean; error?: string };
+    addUser: (user: Omit<AppUser, "id" | "createdAt">) => Promise<{ success: boolean; error?: string }>;
     updateUser: (id: string, updates: Partial<AppUser>) => void;
     removeUser: (id: string) => void;
     changePassword: (id: string, currentPw: string, newPw: string) => { success: boolean; error?: string };
@@ -83,35 +84,64 @@ function loadSession(): AppUser | null {
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-    const [users, setUsers] = useState<AppUser[]>(loadUsers);
+    const [users, setUsers] = useState<AppUser[]>([]);
     const [currentUser, setCurrentUser] = useState<AppUser | null>(loadSession);
+    const [loading, setLoading] = useState(true);
 
-    // Sync users to localStorage whenever they change
+    // Fetch users from Supabase
     useEffect(() => {
-        saveUsers(users);
-    }, [users]);
+        const fetchUsers = async () => {
+            try {
+                const { data, error } = await supabase
+                    .from('users')
+                    .select('*');
+                
+                if (error) {
+                    console.error("Error fetching users from Supabase:", error);
+                    return;
+                }
+                
+                if (data) {
+                    setUsers(data as AppUser[]);
+                }
+            } catch (err) {
+                console.error("Failed to connect to Supabase:", err);
+            } finally {
+                setLoading(false);
+            }
+        };
 
-    // Keep session in sync whenever currentUser's data is updated
+        fetchUsers();
+    }, []);
+
+    // Keep session in sync
     useEffect(() => {
         if (currentUser) {
-            // Re-fetch latest data for current user from users list
-            const fresh = users.find((u) => u.id === currentUser.id);
-            if (fresh) localStorage.setItem(SESSION_KEY, JSON.stringify(fresh));
+            localStorage.setItem(SESSION_KEY, JSON.stringify(currentUser));
         } else {
             localStorage.removeItem(SESSION_KEY);
         }
-    }, [currentUser, users]);
+    }, [currentUser]);
 
-    const login = (email: string, password: string) => {
-        const found = users.find(
-            (u) => u.email.toLowerCase() === email.toLowerCase() && u.password === password
-        );
-        if (!found) {
-            return { success: false, error: "Invalid email or password." };
+    const login = async (email: string, password: string) => {
+        try {
+            const { data, error } = await supabase
+                .from('users')
+                .select('*')
+                .eq('email', email)
+                .eq('password', password)
+                .single();
+
+            if (error || !data) {
+                return { success: false, error: "Invalid email or password." };
+            }
+
+            const found = data as AppUser;
+            setCurrentUser(found);
+            return { success: true, role: found.role };
+        } catch (err) {
+            return { success: false, error: "Database connection failed." };
         }
-        setCurrentUser(found);
-        localStorage.setItem(SESSION_KEY, JSON.stringify(found));
-        return { success: true, role: found.role };
     };
 
     const logout = () => {
@@ -119,29 +149,51 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         localStorage.removeItem(SESSION_KEY);
     };
 
-    const addUser = (user: Omit<AppUser, "id" | "createdAt">) => {
-        const emailExists = users.some((u) => u.email.toLowerCase() === user.email.toLowerCase());
-        if (emailExists) return { success: false, error: "This email is already registered." };
-        if (!user.email.trim()) return { success: false, error: "Email is required." };
-        if (!user.password || user.password.length < 6) return { success: false, error: "Password must be at least 6 characters." };
-
-        const newUser: AppUser = {
+    const addUser = async (user: Omit<AppUser, "id" | "createdAt">) => {
+        const newUser = {
             ...user,
-            id: `user-${Date.now()}`,
-            createdAt: new Date().toISOString(),
+            created_at: new Date().toISOString(),
         };
-        setUsers((prev) => [...prev, newUser]);
+
+        const { data, error } = await supabase
+            .from('users')
+            .insert([newUser])
+            .select()
+            .single();
+
+        if (error) return { success: false, error: error.message };
+        
+        setUsers(prev => [...prev, data as AppUser]);
         return { success: true };
     };
 
-    const updateUser = (id: string, updates: Partial<AppUser>) => {
+    const updateUser = async (id: string, updates: Partial<AppUser>) => {
+        const { error } = await supabase
+            .from('users')
+            .update(updates)
+            .eq('id', id);
+
+        if (error) {
+            console.error("Error updating user:", error);
+            return;
+        }
+
         setUsers((prev) => prev.map((u) => (u.id === id ? { ...u, ...updates } : u)));
         if (currentUser?.id === id) {
             setCurrentUser((prev) => prev ? { ...prev, ...updates } : prev);
         }
     };
 
-    const removeUser = (id: string) => {
+    const removeUser = async (id: string) => {
+        const { error } = await supabase
+            .from('users')
+            .delete()
+            .eq('id', id);
+
+        if (error) {
+            console.error("Error removing user:", error);
+            return;
+        }
         setUsers((prev) => prev.filter((u) => u.id !== id));
     };
 

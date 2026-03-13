@@ -35,10 +35,10 @@ const ChatBox = memo(({ taskId, messages, currentUser }: { taskId: string, messa
         if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }, [messages.length]);
 
-    const handleSend = (e: React.FormEvent) => {
+    const handleSend = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!chatMsg.trim()) return;
-        const res = addMessage(taskId, chatMsg);
+        const res = await addMessage(taskId, chatMsg);
         if (res.success) setChatMsg("");
         else toast.error(res.error);
     };
@@ -82,9 +82,9 @@ const ProofSection = memo(({ task, currentUser }: { task: AppTask, currentUser: 
     const [proofText, setProofText] = useState("");
     const [proofUrl, setProofUrl] = useState("");
 
-    const handleProofSubmit = (e: React.FormEvent) => {
+    const handleProofSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
-        const res = submitTaskProof(task.id, { textExplanation: proofText, urlLink: proofUrl });
+        const res = await submitTaskProof(task.id, { textExplanation: proofText, urlLink: proofUrl });
         if (res.success) {
             toast.success("Proof submitted!");
             setProofText(""); setProofUrl("");
@@ -143,10 +143,10 @@ export default function TasksPage() {
     setShowModal(true);
   };
   
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!form.title.trim()) return toast.error("Task title is required.");
-    const res = createTask({
+    const res = await createTask({
         title: form.title.trim(),
         category: form.category,
         assigneeId: form.assignedToId || (currentUser?.role === "employee" ? currentUser.id : ""),
@@ -156,15 +156,15 @@ export default function TasksPage() {
         type: "Individual",
         status: form.status,
         deadline: new Date(Date.now() + 7 * 86400000).toLocaleDateString(),
-        timeSpent: "0h",
+        timeSpent: "0m",
         notes: form.notes
     });
     if (res.success) { setShowModal(false); toast.success("Task created!"); }
     else toast.error(res.error);
   };
 
-  const handleStatusChange = (taskId: string, s: TaskStatus) => {
-    updateTaskStatus(taskId, s);
+  const handleStatusChange = async (taskId: string, s: TaskStatus) => {
+    await updateTaskStatus(taskId, s);
     setOpenStatusMenu(null);
   };
 

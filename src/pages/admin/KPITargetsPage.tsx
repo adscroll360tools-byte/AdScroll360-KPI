@@ -54,7 +54,7 @@ export default function KPITargetsPage() {
     setShowModal(true);
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!form.title.trim()) { setFormError("Title is required."); return; }
     if (form.type === "Individual" && !form.assignedToId) { setFormError("Employee assignment is required."); return; }
@@ -62,7 +62,7 @@ export default function KPITargetsPage() {
 
     const assignedUser = employees.find(u => u.id === form.assignedToId);
     
-    const res = createKPI({
+    const res = await createKPI({
       ...form,
       assignedToName: assignedUser?.name
     });
@@ -81,7 +81,7 @@ export default function KPITargetsPage() {
   };
 
   const saveProgress = async (id: string) => {
-    const res = updateKPIProgress(id, tempProgress);
+    const res = await updateKPIProgress(id, tempProgress);
     if (res.success) {
       toast.success("Progress updated!");
       setEditingProgressId(null);
@@ -114,13 +114,13 @@ export default function KPITargetsPage() {
     setTempMetrics(prev => prev.filter(m => m.id !== id));
   };
 
-  const handleSaveMetrics = () => {
+  const handleSaveMetrics = async () => {
     const totalWeight = tempMetrics.reduce((sum, m) => sum + m.weight, 0);
     if (totalWeight !== 100) {
       toast.error(`Total weight must be 100% (Current: ${totalWeight}%)`);
       return;
     }
-    const res = updateQualityMetrics(tempMetrics);
+    const res = await updateQualityMetrics(tempMetrics);
     if (res.success) {
       toast.success("Quality Scoring System updated!");
       setIsEditingMetrics(false);

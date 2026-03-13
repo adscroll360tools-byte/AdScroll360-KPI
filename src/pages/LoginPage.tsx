@@ -22,21 +22,25 @@ export default function LoginPage() {
   const navigate = useNavigate();
   const { login } = useAuth();
 
-  const handleLogin = (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
     if (!email.trim()) { setError("Email is required."); return; }
     if (!password) { setError("Password is required."); return; }
     setLoading(true);
-    setTimeout(() => {
-      const result = login(email.trim(), password);
-      setLoading(false);
+    
+    try {
+      const result = await login(email.trim(), password);
       if (result.success && result.role) {
         navigate(ROLE_REDIRECT[result.role], { replace: true });
       } else {
         setError(result.error ?? "Login failed.");
       }
-    }, 400); // slight delay for UX
+    } catch (err) {
+      setError("An unexpected error occurred.");
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (

@@ -1,4 +1,5 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from "react";
+import { supabase } from "@/lib/supabase";
 import { useAuth } from "./AuthContext";
 
 export type AttendanceStatus = "Present" | "Late" | "Absent" | "Leave" | "Break" | "—";
@@ -27,13 +28,13 @@ export interface BreakRequest {
 interface AttendanceContextType {
     records: AttendanceRecord[];
     breakRequests: BreakRequest[];
-    checkIn: () => { success: boolean; error?: string; status?: AttendanceStatus };
-    checkOut: () => { success: boolean; error?: string };
-    requestBreak: (reason: string, sessionTime: string) => { success: boolean; error?: string };
-    approveBreak: (requestId: string) => void;
-    rejectBreak: (requestId: string) => void;
-    endBreak: () => { success: boolean; error?: string };
-    updateMemberAttendance: (userId: string, date: string, status: AttendanceStatus) => void;
+    checkIn: () => Promise<{ success: boolean; error?: string; status?: AttendanceStatus }>;
+    checkOut: () => Promise<{ success: boolean; error?: string }>;
+    requestBreak: (reason: string, sessionTime: string) => Promise<{ success: boolean; error?: string }>;
+    approveBreak: (requestId: string) => Promise<void>;
+    rejectBreak: (requestId: string) => Promise<void>;
+    endBreak: () => Promise<{ success: boolean; error?: string }>;
+    updateMemberAttendance: (userId: string, date: string, status: AttendanceStatus) => Promise<void>;
 }
 
 const AttendanceContext = createContext<AttendanceContextType | null>(null);
@@ -51,16 +52,61 @@ function loadData<T>(key: string, defaultValue: T): T {
 
 export function AttendanceProvider({ children }: { children: ReactNode }) {
     const { currentUser } = useAuth();
-    const [records, setRecords] = useState<AttendanceRecord[]>(() => loadData(STORE_RECORDS, []));
-    const [breakRequests, setBreakRequests] = useState<BreakRequest[]>(() => loadData(STORE_BREAKS, []));
+    const [records, setRecords] = useState<AttendanceRecord[]>([]);
+    const [breakRequests, setBreakRequests] = useState<BreakRequest[]>([]);
+    const [loading, setLoading] = useState(true);
 
+    // Initial load from Supabase
     useEffect(() => {
-        localStorage.setItem(STORE_RECORDS, JSON.stringify(records));
-    }, [records]);
+        const fetchData = async () => {
+            if (!currentUser) return;
+            
+            try {
+                // Fetch attendance records
+                const { data: attData, error: attError } = await supabase
+                    .from('attendance')
+                    .select('*');
+                
+                if (attData) {
+                    const mapped: AttendanceRecord[] = attData.map((r: any) => ({
+                        id: r.id,
+                        userId: r.user_id,
+                        date: r.date,
+                        status: r.status,
+                        checkInTime: r.check_in_time,
+                        checkOutTime: r.check_out_time,
+                        breakStartTime: r.break_start_time,
+                        breakEndTime: r.break_end_time
+                    }));
+                    setRecords(mapped);
+                }
 
-    useEffect(() => {
-        localStorage.setItem(STORE_BREAKS, JSON.stringify(breakRequests));
-    }, [breakRequests]);
+                // Fetch break requests
+                const { data: brData, error: brError } = await supabase
+                    .from('break_requests')
+                    .select('*');
+                
+                if (brData) {
+                    const mapped: BreakRequest[] = brData.map((r: any) => ({
+                        id: r.id,
+                        userId: r.user_id,
+                        date: r.date,
+                        reason: r.reason,
+                        sessionTime: r.session_time,
+                        status: r.status,
+                        requestedAt: r.requested_at
+                    }));
+                    setBreakRequests(mapped);
+                }
+            } catch (err) {
+                console.error("Error loading attendance data:", err);
+            } finally {
+                setLoading(false);
+            }
+        };
+
+        fetchData();
+    }, [currentUser]);
 
     const getCurrentDateStr = () => {
         const now = new Date();
@@ -85,7 +131,7 @@ export function AttendanceProvider({ children }: { children: ReactNode }) {
         return "Absent";
     };
 
-    const checkIn = () => {
+    const checkIn = async () => {
         if (!currentUser) return { success: false, error: "Not logged in" };
         const date = getCurrentDateStr();
         const existing = records.find(r => r.userId === currentUser.id && r.date === date);
@@ -97,27 +143,46 @@ export function AttendanceProvider({ children }: { children: ReactNode }) {
         const status = determineStatus(now);
         const timeStr = now.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true });
 
-        const newRecord: AttendanceRecord = {
-            id: crypto.randomUUID(),
-            userId: currentUser.id,
+        const newRecord = {
+            user_id: currentUser.id,
             date,
-            checkInTime: timeStr,
-            checkOutTime: null,
-            status,
-            breakStartTime: null,
-            breakEndTime: null,
+            check_in_time: timeStr,
+            status: status
         };
 
-        if (existing) {
-            setRecords(prev => prev.map(r => r.id === existing.id ? { ...r, checkInTime: timeStr, status } : r));
-        } else {
-            setRecords(prev => [...prev, newRecord]);
-        }
+        const { data, error } = await supabase
+            .from('attendance')
+            .upsert(newRecord, { onConflict: 'user_id,date' })
+            .select()
+            .single();
+
+        if (error) return { success: false, error: error.message };
+
+        const mapped: AttendanceRecord = {
+            id: data.id,
+            userId: data.user_id,
+            date: data.date,
+            status: data.status,
+            checkInTime: data.check_in_time,
+            checkOutTime: data.check_out_time,
+            breakStartTime: data.break_start_time,
+            breakEndTime: data.break_end_time
+        };
+
+        setRecords(prev => {
+            const index = prev.findIndex(r => r.userId === currentUser.id && r.date === date);
+            if (index !== -1) {
+                const updated = [...prev];
+                updated[index] = mapped;
+                return updated;
+            }
+            return [...prev, mapped];
+        });
 
         return { success: true, status };
     };
 
-    const checkOut = () => {
+    const checkOut = async () => {
         if (!currentUser) return { success: false, error: "Not logged in" };
         const date = getCurrentDateStr();
         const record = records.find(r => r.userId === currentUser.id && r.date === date);
@@ -126,12 +191,19 @@ export function AttendanceProvider({ children }: { children: ReactNode }) {
 
         const timeStr = new Date().toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true });
         
+        const { error } = await supabase
+            .from('attendance')
+            .update({ check_out_time: timeStr })
+            .eq('id', record.id);
+
+        if (error) return { success: false, error: error.message };
+
         setRecords(prev => prev.map(r => r.id === record.id ? { ...r, checkOutTime: timeStr } : r));
         return { success: true };
     };
 
     // Break request system
-    const requestBreak = (reason: string, sessionTime: string) => {
+    const requestBreak = async (reason: string, sessionTime: string) => {
         if (!currentUser) return { success: false, error: "Not logged in" };
         const date = getCurrentDateStr();
         const record = records.find(r => r.userId === currentUser.id && r.date === date);
@@ -142,25 +214,55 @@ export function AttendanceProvider({ children }: { children: ReactNode }) {
         const pending = breakRequests.find(r => r.userId === currentUser.id && r.date === date && r.status === "Pending");
         if (pending) return { success: false, error: "You already have a pending break request." };
 
-        const br: BreakRequest = {
-            id: crypto.randomUUID(),
-            userId: currentUser.id,
+        const br = {
+            user_id: currentUser.id,
             date,
             reason,
-            sessionTime,
+            session_time: sessionTime,
             status: "Pending",
-            requestedAt: new Date().toISOString(),
         };
 
-        setBreakRequests(prev => [...prev, br]);
+        const { data, error } = await supabase
+            .from('break_requests')
+            .insert([br])
+            .select()
+            .single();
+
+        if (error) return { success: false, error: error.message };
+
+        const mapped: BreakRequest = {
+            id: data.id,
+            userId: data.user_id,
+            date: data.date,
+            reason: data.reason,
+            sessionTime: data.session_time,
+            status: data.status,
+            requestedAt: data.requested_at
+        };
+
+        setBreakRequests(prev => [...prev, mapped]);
         return { success: true };
     };
 
-    const approveBreak = (requestId: string) => {
+    const approveBreak = async (requestId: string) => {
+        const { error: brError } = await supabase
+            .from('break_requests')
+            .update({ status: "Approved" })
+            .eq('id', requestId);
+
+        if (brError) return;
+
         setBreakRequests(prev => prev.map(r => r.id === requestId ? { ...r, status: "Approved" } : r));
         const req = breakRequests.find(r => r.id === requestId);
         if (req) {
             const timeStr = new Date().toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true });
+            
+            await supabase
+                .from('attendance')
+                .update({ status: "Break", break_start_time: timeStr })
+                .eq('user_id', req.userId)
+                .eq('date', req.date);
+
             setRecords(prev => {
                 const record = prev.find(r => r.userId === req.userId && r.date === req.date);
                 if (record) {
@@ -171,11 +273,16 @@ export function AttendanceProvider({ children }: { children: ReactNode }) {
         }
     };
 
-    const rejectBreak = (requestId: string) => {
+    const rejectBreak = async (requestId: string) => {
+        await supabase
+            .from('break_requests')
+            .update({ status: "Rejected" })
+            .eq('id', requestId);
+            
         setBreakRequests(prev => prev.map(r => r.id === requestId ? { ...r, status: "Rejected" } : r));
     };
 
-    const endBreak = () => {
+    const endBreak = async () => {
         if (!currentUser) return { success: false, error: "Not logged in" };
         const date = getCurrentDateStr();
         const record = records.find(r => r.userId === currentUser.id && r.date === date);
@@ -183,32 +290,30 @@ export function AttendanceProvider({ children }: { children: ReactNode }) {
 
         const timeStr = new Date().toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true });
 
-        // Need to restore previous status. For simplicity, re-run calculate based on check-in time or leave it as Present/Late.
-        // Assuming check in time determines the base status:
-        // Actually we can just keep Present or Late. 
-        // Let's just set it relative to check in time.
-        const baseStatus = determineStatus(new Date(getCurrentDateStr() + " " + record.checkInTime));
-        // wait, parse time string "9:00 AM" back to Date to re-determine
-        // simpler: assume original status was "Present" or "Late", but we didn't save it directly on the record if it changed to "Break".
-        // Better way: determineStatus is based on checkInTime. Let's just restore it cleanly.
+        // Restore status based on check-in time
+        let restoredStatus: AttendanceStatus = "Present";
+        if (record.checkInTime) {
+            const match = record.checkInTime.match(/(\d+):(\d+)\s*(AM|PM)/i);
+            if (match) {
+                let h = parseInt(match[1]);
+                const m = parseInt(match[2]);
+                if (match[3].toUpperCase() === "PM" && h !== 12) h += 12;
+                if (match[3].toUpperCase() === "AM" && h === 12) h = 0;
+                const tDate = new Date();
+                tDate.setHours(h, m, 0, 0);
+                restoredStatus = determineStatus(tDate);
+            }
+        }
+
+        const { error } = await supabase
+            .from('attendance')
+            .update({ status: restoredStatus, break_end_time: timeStr })
+            .eq('id', record.id);
+
+        if (error) return { success: false, error: error.message };
 
         setRecords(prev => prev.map(r => {
             if (r.id === record.id) {
-                // Approximate restoring state - we'll just set it to Present to simplify, 
-                // but realistically we should store the 'originalStatus'
-                let restoredStatus: AttendanceStatus = "Present";
-                if (r.checkInTime) {
-                    const match = r.checkInTime.match(/(\d+):(\d+)\s*(AM|PM)/i);
-                    if (match) {
-                        let h = parseInt(match[1]);
-                        const m = parseInt(match[2]);
-                        if (match[3].toUpperCase() === "PM" && h !== 12) h += 12;
-                        if (match[3].toUpperCase() === "AM" && h === 12) h = 0;
-                        const tDate = new Date();
-                        tDate.setHours(h, m, 0, 0);
-                        restoredStatus = determineStatus(tDate);
-                    }
-                }
                 return { ...r, status: restoredStatus, breakEndTime: timeStr };
             }
             return r;
@@ -216,22 +321,32 @@ export function AttendanceProvider({ children }: { children: ReactNode }) {
         return { success: true };
     };
 
-    const updateMemberAttendance = (userId: string, date: string, status: AttendanceStatus) => {
+    const updateMemberAttendance = async (userId: string, date: string, status: AttendanceStatus) => {
+        const { data, error } = await supabase
+            .from('attendance')
+            .upsert({ user_id: userId, date, status }, { onConflict: 'user_id,date' })
+            .select()
+            .single();
+
+        if (error) return;
+
+        const mapped: AttendanceRecord = {
+            id: data.id,
+            userId: data.user_id,
+            date: data.date,
+            status: data.status,
+            checkInTime: data.check_in_time,
+            checkOutTime: data.check_out_time,
+            breakStartTime: data.break_start_time,
+            breakEndTime: data.break_end_time
+        };
+
         setRecords(prev => {
             const existing = prev.find(r => r.userId === userId && r.date === date);
             if (existing) {
-                return prev.map(r => r.id === existing.id ? { ...r, status } : r);
+                return prev.map(r => r.id === existing.id ? mapped : r);
             } else {
-                return [...prev, {
-                    id: crypto.randomUUID(),
-                    userId,
-                    date,
-                    checkInTime: null,
-                    checkOutTime: null,
-                    status,
-                    breakStartTime: null,
-                    breakEndTime: null
-                }];
+                return [...prev, mapped];
             }
         });
     };

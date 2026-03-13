@@ -64,21 +64,21 @@ export default function AttendancePage() {
       else state = "checked-in";
   }
 
-  const handleCheckIn = () => { 
-    const res = checkIn(); 
+  const handleCheckIn = async () => { 
+    const res = await checkIn(); 
     if (res.success) toast.success("Checked In!", { description: `Status: ${res.status}` });
     else toast.error(res.error);
   };
   
-  const handleCheckOut = () => { 
-    const res = checkOut(); 
+  const handleCheckOut = async () => { 
+    const res = await checkOut(); 
     if (res.success) toast.success("Checked Out!");
     else toast.error(res.error);
   };
 
-  const handleBreakRequestSubmit = (e: React.FormEvent) => {
+  const handleBreakRequestSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const res = requestBreak(breakReason, breakDuration);
+    const res = await requestBreak(breakReason, breakDuration);
     if (res.success) {
       toast.success("Break request submitted", { description: "Pending controller approval" });
       setShowBreakModal(false);
@@ -89,8 +89,8 @@ export default function AttendancePage() {
     }
   };
 
-  const handleEndBreak = () => {
-    const res = endBreak();
+  const handleEndBreak = async () => {
+    const res = await endBreak();
     if (res.success) toast.success("Break Ended", { description: "Back to work!" });
     else toast.error(res.error);
   };

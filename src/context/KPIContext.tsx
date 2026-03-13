@@ -1,4 +1,5 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from "react";
+import { supabase } from "@/lib/supabase";
 import { useAuth } from "./AuthContext";
 
 export type KPIType = "Company" | "Group" | "Individual";
@@ -39,11 +40,11 @@ interface KPIContextType {
     kpis: AppKPI[];
     qualityMetrics: QualityMetric[];
     qualityScores: AppQualityScore[];
-    createKPI: (kpi: Omit<AppKPI, "id" | "createdAt" | "current">) => { success: boolean; error?: string };
-    updateKPIProgress: (kpiId: string, progress: number) => { success: boolean; error?: string };
-    deleteKPI: (kpiId: string) => { success: boolean; error?: string };
-    updateQualityMetrics: (metrics: QualityMetric[]) => { success: boolean; error?: string };
-    addQualityScore: (score: Omit<AppQualityScore, "id" | "createdAt">) => { success: boolean; error?: string };
+    createKPI: (kpi: Omit<AppKPI, "id" | "createdAt" | "current">) => Promise<{ success: boolean; error?: string }>;
+    updateKPIProgress: (kpiId: string, progress: number) => Promise<{ success: boolean; error?: string }>;
+    deleteKPI: (kpiId: string) => Promise<{ success: boolean; error?: string }>;
+    updateQualityMetrics: (metrics: QualityMetric[]) => Promise<{ success: boolean; error?: string }>;
+    addQualityScore: (score: Omit<AppQualityScore, "id" | "createdAt">) => Promise<{ success: boolean; error?: string }>;
 }
 
 const KPIContext = createContext<KPIContextType | null>(null);
@@ -85,82 +86,157 @@ function loadScores(): AppQualityScore[] {
 
 export function KPIProvider({ children }: { children: ReactNode }) {
     const { currentUser } = useAuth();
-    const [kpis, setKPIs] = useState<AppKPI[]>(loadKPIs);
-    const [qualityMetrics, setQualityMetrics] = useState<QualityMetric[]>(loadMetrics);
-    const [qualityScores, setQualityScores] = useState<AppQualityScore[]>(loadScores);
+    const [kpis, setKPIs] = useState<AppKPI[]>([]);
+    const [qualityMetrics, setQualityMetrics] = useState<QualityMetric[]>([]);
+    const [qualityScores, setQualityScores] = useState<AppQualityScore[]>([]);
+    const [loading, setLoading] = useState(true);
 
     useEffect(() => {
-        localStorage.setItem(STORE_KEY, JSON.stringify(kpis));
-    }, [kpis]);
+        const fetchKPIs = async () => {
+            if (!currentUser) return;
+            try {
+                // Fetch KPIs
+                const { data: kData } = await supabase.from('kpis').select('*');
+                if (kData) {
+                    setKPIs(kData.map((k: any) => ({
+                        id: k.id,
+                        title: k.title,
+                        description: k.description,
+                        type: k.type,
+                        target: k.target,
+                        current: k.current,
+                        unit: k.unit,
+                        dailyMin: k.daily_min,
+                        dailyMax: k.daily_max,
+                        assignedToId: k.assigned_to_id,
+                        groupId: k.group_id,
+                        createdAt: k.created_at
+                    })));
+                }
 
-    useEffect(() => {
-        localStorage.setItem(METRICS_KEY, JSON.stringify(qualityMetrics));
-    }, [qualityMetrics]);
+                // Fetch Metrics
+                const { data: mData } = await supabase.from('quality_metrics').select('*');
+                if (mData) {
+                    setQualityMetrics(mData.map((m: any) => ({
+                        id: m.id,
+                        metric: m.metric,
+                        weight: m.weight,
+                        description: m.description
+                    })));
+                }
 
-    useEffect(() => {
-        localStorage.setItem(SCORES_KEY, JSON.stringify(qualityScores));
-    }, [qualityScores]);
-
-    const createKPI = (k: Omit<AppKPI, "id" | "createdAt" | "current">) => {
-        if (!currentUser) return { success: false, error: "Not logged in" };
-        if (currentUser.role === "employee") return { success: false, error: "Employees cannot create KPIs" };
-        if (k.type === "Company" && currentUser.role !== "admin") return { success: false, error: "Only Admins can create Company KPIs" };
-
-        const newKPI: AppKPI = {
-            ...k,
-            id: crypto.randomUUID(),
-            current: 0,
-            createdAt: new Date().toISOString()
+                // Fetch Scores
+                const { data: sData } = await supabase.from('quality_scores').select('*');
+                if (sData) {
+                    setQualityScores(sData.map((s: any) => ({
+                        id: s.id,
+                        employeeId: s.employee_id,
+                        score: s.score,
+                        breakdown: s.breakdown,
+                        month: s.month,
+                        createdAt: s.created_at
+                    })));
+                }
+            } catch (err) {
+                console.error("Error fetching KPI data:", err);
+            } finally {
+                setLoading(false);
+            }
         };
 
-        setKPIs(prev => [...prev, newKPI]);
+        fetchKPIs();
+    }, [currentUser]);
+
+    const createKPI = async (k: Omit<AppKPI, "id" | "createdAt" | "current">) => {
+        if (!currentUser) return { success: false, error: "Not logged in" };
+        
+        const newKPI = {
+            title: k.title,
+            description: k.description,
+            type: k.type,
+            target: k.target,
+            unit: k.unit,
+            daily_min: k.dailyMin,
+            daily_max: k.dailyMax,
+            assigned_to_id: k.assignedToId,
+            group_id: k.groupId,
+        };
+
+        const { data, error } = await supabase
+            .from('kpis')
+            .insert([newKPI])
+            .select()
+            .single();
+
+        if (error) return { success: false, error: error.message };
+
+        setKPIs(prev => [...prev, {
+            ...k,
+            id: data.id,
+            current: 0,
+            createdAt: data.created_at
+        } as AppKPI]);
         return { success: true };
     };
 
-    const updateKPIProgress = (kpiId: string, currentVal: number) => {
-        if (!currentUser) return { success: false, error: "Not logged in" };
-        const kpi = kpis.find(k => k.id === kpiId);
-        if (!kpi) return { success: false, error: "KPI not found" };
+    const updateKPIProgress = async (kpiId: string, currentVal: number) => {
+        const { error } = await supabase
+            .from('kpis')
+            .update({ current: currentVal })
+            .eq('id', kpiId);
 
-        if (kpi.type === "Company" && currentUser.role !== "admin") return { success: false, error: "Only Admins can edit Company KPIs" };
-        if (kpi.type === "Group" && currentUser.role === "employee") return { success: false, error: "Employees cannot update Group KPIs" };
-        if (kpi.type === "Individual" && currentUser.role === "employee" && kpi.assignedToId !== currentUser.id) return { success: false, error: "You can only edit your own Individual KPIs" };
+        if (error) return { success: false, error: error.message };
 
         setKPIs(prev => prev.map(k => k.id === kpiId ? { ...k, current: currentVal } : k));
         return { success: true };
     };
 
-    const deleteKPI = (kpiId: string) => {
-        if (!currentUser) return { success: false, error: "Not logged in" };
-        const kpi = kpis.find(k => k.id === kpiId);
-        if (!kpi) return { success: false, error: "KPI not found" };
+    const deleteKPI = async (kpiId: string) => {
+        const { error } = await supabase
+            .from('kpis')
+            .delete()
+            .eq('id', kpiId);
 
-        if (currentUser.role === "employee") return { success: false, error: "Employees cannot delete KPIs" };
-        if (kpi.type === "Company" && currentUser.role !== "admin") return { success: false, error: "Only Admins can delete Company KPIs" };
+        if (error) return { success: false, error: error.message };
 
         setKPIs(prev => prev.filter(k => k.id !== kpiId));
         return { success: true };
     };
 
-    const updateQualityMetrics = (metrics: QualityMetric[]) => {
-        if (!currentUser || (currentUser.role !== "admin" && currentUser.role !== "controller")) {
-            return { success: false, error: "Unauthorized" };
+    const updateQualityMetrics = async (metrics: QualityMetric[]) => {
+        // For simplicity, we'll just upsert them
+        for (const m of metrics) {
+             await supabase.from('quality_metrics').upsert({
+                id: m.id,
+                metric: m.metric,
+                weight: m.weight,
+                description: m.description
+            });
         }
         setQualityMetrics(metrics);
         return { success: true };
     };
 
-    const addQualityScore = (s: Omit<AppQualityScore, "id" | "createdAt">) => {
-        if (!currentUser || (currentUser.role !== "admin" && currentUser.role !== "controller")) {
-            return { success: false, error: "Unauthorized" };
-        }
-        const newScore: AppQualityScore = {
-            ...s,
-            id: crypto.randomUUID(),
-            createdAt: new Date().toISOString()
+    const addQualityScore = async (s: Omit<AppQualityScore, "id" | "createdAt">) => {
+        const newScore = {
+            employee_id: s.employeeId,
+            score: s.score,
+            breakdown: s.breakdown,
+            month: s.month
         };
-        // Remove old score for same month/emp if exists
-        setQualityScores(prev => [newScore, ...prev.filter(x => !(x.employeeId === s.employeeId && x.month === s.month))]);
+
+        const { data, error } = await supabase
+            .from('quality_scores')
+            .insert([newScore])
+            .select()
+            .single();
+
+        if (error) return { success: false, error: error.message };
+
+        setQualityScores(prev => [
+            { ...s, id: data.id, createdAt: data.created_at },
+            ...prev.filter(x => !(x.employeeId === s.employeeId && x.month === s.month))
+        ]);
         return { success: true };
     };
 

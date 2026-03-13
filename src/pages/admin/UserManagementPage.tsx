@@ -75,7 +75,7 @@ export default function UserManagementPage() {
 
     const closeModal = () => { setModalMode(null); setEditTarget(null); setFormError(""); };
 
-    const handleAddUser = (e: React.FormEvent) => {
+    const handleAddUser = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!userForm.name.trim()) { setFormError("Full name is required."); return; }
         if (!userForm.email.trim()) { setFormError("Email is required."); return; }
@@ -83,7 +83,7 @@ export default function UserManagementPage() {
         if (userForm.password !== userForm.confirmPassword) { setFormError("Passwords do not match."); return; }
 
         const role: UserRole = modalMode === "add-controller" ? "controller" : "employee";
-        const result = addUser({
+        const result = await addUser({
             name: userForm.name.trim(),
             email: userForm.email.trim(),
             password: userForm.password,
@@ -100,12 +100,12 @@ export default function UserManagementPage() {
         }
     };
 
-    const handleEditUser = (e: React.FormEvent) => {
+    const handleEditUser = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!editTarget) return;
         if (!userForm.name.trim()) { setFormError("Full name is required."); return; }
         if (!userForm.email.trim()) { setFormError("Email is required."); return; }
-        updateUser(editTarget.id, {
+        await updateUser(editTarget.id, {
             name: userForm.name.trim(),
             email: userForm.email.trim(),
             department: userForm.department,
@@ -130,8 +130,8 @@ export default function UserManagementPage() {
         }
     };
 
-    const handleDelete = (user: AppUser) => {
-        removeUser(user.id);
+    const handleDelete = async (user: AppUser) => {
+        await removeUser(user.id);
         setMenuOpen(null);
         toast.error("User removed", { description: user.name });
     };
