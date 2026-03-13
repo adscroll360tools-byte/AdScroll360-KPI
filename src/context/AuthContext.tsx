@@ -107,7 +107,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             try {
                 const { data, error } = await supabase
                     .from('users')
-                    .select('*');
+                    .select('id, name, email, password, role, department, position, score, created_at');
                 
                 if (error) {
                     console.error("Error fetching users from Supabase:", error);
@@ -140,7 +140,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         try {
             const { data, error } = await supabase
                 .from('users')
-                .select('*')
+                .select('id, name, email, password, role, department, position, score, created_at')
                 .eq('email', email)
                 .eq('password', password)
                 .single();
