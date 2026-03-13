@@ -75,29 +75,29 @@ export default function EmployeesPage() {
     setMenuOpen(null);
   };
 
-  const handleDelete = (id: string) => {
+  const handleDelete = async (id: string) => {
     const emp = users.find((e) => e.id === id);
     if (emp?.email === "basith@adscroll360.com") {
         toast.error("Cannot remove super admin");
         setMenuOpen(null);
         return;
     }
-    removeUser(id);
+    await removeUser(id);
     setMenuOpen(null);
     toast.error("Employee removed", { description: emp?.name });
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!form.name.trim()) { setFormError("Name is required."); return; }
     if (!form.email.trim()) { setFormError("Email is required."); return; }
 
     if (editTarget) {
-      updateUser(editTarget.id, { ...form });
+      await updateUser(editTarget.id, { ...form });
       toast.success("Employee updated!", { description: form.name });
     } else {
       const defaultPw = `${form.name.split(' ')[0]}@123`;
-      const res = addUser({ ...form, password: defaultPw });
+      const res = await addUser({ ...form, password: defaultPw });
       if (res.success) {
         toast.success("Employee added!", { description: `${form.name} (Password: ${defaultPw})` });
       } else {
@@ -108,7 +108,7 @@ export default function EmployeesPage() {
     setShowModal(false);
   };
 
-  const handleScoreSubmit = (e: React.FormEvent) => {
+  const handleScoreSubmit = async (e: React.FormEvent) => {
       e.preventDefault();
       if (!showScoreModal) return;
 
@@ -118,7 +118,7 @@ export default function EmployeesPage() {
           total += (metricScores[m.id] || 0) * (m.weight / 100);
       });
 
-      const res = addQualityScore({
+      const res = await addQualityScore({
           employeeId: showScoreModal.id,
           month: new Date().toISOString().slice(0, 7),
           score: Math.round(total),

@@ -20,10 +20,10 @@ interface AuthContextType {
     login: (email: string, password: string) => Promise<{ success: boolean; error?: string; role?: UserRole }>;
     logout: () => void;
     addUser: (user: Omit<AppUser, "id" | "createdAt">) => Promise<{ success: boolean; error?: string }>;
-    updateUser: (id: string, updates: Partial<AppUser>) => void;
-    removeUser: (id: string) => void;
-    changePassword: (id: string, currentPw: string, newPw: string) => { success: boolean; error?: string };
-    forceResetPassword: (id: string, newPw: string) => { success: boolean; error?: string };
+    updateUser: (id: string, updates: Partial<AppUser>) => Promise<void>;
+    removeUser: (id: string) => Promise<void>;
+    changePassword: (id: string, currentPw: string, newPw: string) => Promise<{ success: boolean; error?: string }>;
+    forceResetPassword: (id: string, newPw: string) => Promise<{ success: boolean; error?: string }>;
 }
 
 const AuthContext = createContext<AuthContextType | null>(null);
@@ -71,6 +71,19 @@ function loadUsers(): AppUser[] {
     return INITIAL_TEAM;
 }
 
+function mapUser(u: any): AppUser {
+    return {
+        id: u.id,
+        name: u.name,
+        email: u.email,
+        password: u.password,
+        role: u.role,
+        department: u.department,
+        position: u.position,
+        createdAt: u.created_at
+    };
+}
+
 function saveUsers(users: AppUser[]) {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(users));
 }
@@ -102,7 +115,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 }
                 
                 if (data) {
-                    setUsers(data as AppUser[]);
+                    setUsers(data.map(mapUser));
                 }
             } catch (err) {
                 console.error("Failed to connect to Supabase:", err);
@@ -136,7 +149,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 return { success: false, error: "Invalid email or password." };
             }
 
-            const found = data as AppUser;
+            const found = mapUser(data);
             setCurrentUser(found);
             return { success: true, role: found.role };
         } catch (err) {
@@ -163,7 +176,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
         if (error) return { success: false, error: error.message };
         
-        setUsers(prev => [...prev, data as AppUser]);
+        const mapped = mapUser(data);
+        setUsers(prev => [...prev, mapped]);
         return { success: true };
     };
 
@@ -197,20 +211,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setUsers((prev) => prev.filter((u) => u.id !== id));
     };
 
-    const changePassword = (id: string, currentPw: string, newPw: string) => {
+    const changePassword = async (id: string, currentPw: string, newPw: string) => {
         const user = users.find((u) => u.id === id);
         if (!user) return { success: false, error: "User not found." };
         if (user.password !== currentPw) return { success: false, error: "Current password is incorrect." };
         if (newPw.length < 6) return { success: false, error: "New password must be at least 6 characters." };
-        updateUser(id, { password: newPw });
+        
+        await updateUser(id, { password: newPw });
         return { success: true };
     };
 
-    const forceResetPassword = (id: string, newPw: string) => {
+    const forceResetPassword = async (id: string, newPw: string) => {
         const user = users.find((u) => u.id === id);
         if (!user) return { success: false, error: "User not found." };
         if (newPw.length < 6) return { success: false, error: "Password must be at least 6 characters." };
-        updateUser(id, { password: newPw });
+        
+        await updateUser(id, { password: newPw });
         return { success: true };
     };
 

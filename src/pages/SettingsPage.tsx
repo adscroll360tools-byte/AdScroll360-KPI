@@ -8,17 +8,30 @@ import { Switch } from "@/components/ui/switch";
 import { Save, Bell, Shield, Clock, X } from "lucide-react";
 import { toast } from "sonner";
 import { AnimatePresence } from "framer-motion";
+import { useAuth } from "@/context/AuthContext";
+import { useEffect } from "react";
 
 export default function SettingsPage() {
+  const { currentUser, updateUser, changePassword } = useAuth();
   const [notifications, setNotifications] = useState(true);
   const [dailyReminder, setDailyReminder] = useState(true);
   const [weeklyReport, setWeeklyReport] = useState(true);
 
   const [profile, setProfile] = useState({
-    name: "Basith",
-    email: "basith@adscroll360.com",
-    department: "Management",
+    name: "",
+    email: "",
+    department: "",
   });
+
+  useEffect(() => {
+    if (currentUser) {
+      setProfile({
+        name: currentUser.name,
+        email: currentUser.email,
+        department: currentUser.department || "",
+      });
+    }
+  }, [currentUser]);
 
   const [hours, setHours] = useState({
     start: "09:00 AM",
@@ -32,7 +45,9 @@ export default function SettingsPage() {
   const [pwForm, setPwForm] = useState({ current: "", next: "", confirm: "" });
   const [pwError, setPwError] = useState("");
 
-  const handleSave = () => {
+  const handleSave = async () => {
+    if (!currentUser) return;
+    await updateUser(currentUser.id, profile);
     toast.success("Settings saved!", { description: "Your profile and preferences have been updated." });
   };
 
@@ -43,14 +58,21 @@ export default function SettingsPage() {
     toast.success(`${key === "notifications" ? "Push Notifications" : key === "dailyReminder" ? "Daily Reminder" : "Weekly Report"} ${val ? "enabled" : "disabled"}`);
   };
 
-  const handlePasswordSubmit = (e: React.FormEvent) => {
+  const handlePasswordSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!currentUser) return;
     if (!pwForm.current) { setPwError("Current password is required."); return; }
     if (pwForm.next.length < 6) { setPwError("New password must be at least 6 characters."); return; }
     if (pwForm.next !== pwForm.confirm) { setPwError("Passwords do not match."); return; }
-    setShowPwModal(false);
-    setPwForm({ current: "", next: "", confirm: "" });
-    toast.success("Password changed successfully!");
+    
+    const res = await changePassword(currentUser.id, pwForm.current, pwForm.next);
+    if (res.success) {
+        setShowPwModal(false);
+        setPwForm({ current: "", next: "", confirm: "" });
+        toast.success("Password changed successfully!");
+    } else {
+        setPwError(res.error || "Failed to change password.");
+    }
   };
 
   return (

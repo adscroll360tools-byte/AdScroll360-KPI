@@ -116,12 +116,12 @@ export default function UserManagementPage() {
         closeModal();
     };
 
-    const handleChangePw = (e: React.FormEvent) => {
+    const handleChangePw = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!editTarget) return;
         if (!pwForm.newPw) { setFormError("New password is required."); return; }
         if (pwForm.newPw !== pwForm.confirmPw) { setFormError("Passwords do not match."); return; }
-        const result = forceResetPassword(editTarget.id, pwForm.newPw);
+        const result = await forceResetPassword(editTarget.id, pwForm.newPw);
         if (result.success) {
             toast.success("Password reset!", { description: `${editTarget.name}'s password has been updated.` });
             closeModal();

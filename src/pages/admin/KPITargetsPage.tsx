@@ -195,7 +195,7 @@ export default function KPITargetsPage() {
                           <p className="text-sm font-semibold text-foreground">{kpi.dailyMin} – {kpi.dailyMax}</p>
                         </div>
                         {isAdmin && (
-                          <button onClick={() => deleteKPI(kpi.id)} className="p-1.5 text-muted-foreground hover:text-destructive transition-colors opacity-0 group-hover:opacity-100">
+                          <button onClick={async (e) => { e.stopPropagation(); await deleteKPI(kpi.id); toast.success("KPI Deleted"); }} className="p-1.5 text-muted-foreground hover:text-destructive transition-colors opacity-0 group-hover:opacity-100">
                              <X className="h-4 w-4" />
                           </button>
                         )}

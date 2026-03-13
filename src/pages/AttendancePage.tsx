@@ -312,10 +312,10 @@ export default function AttendancePage() {
                                  <p className="text-sm font-semibold">{u?.name}</p>
                                  <p className="text-xs text-muted-foreground">Reason: {req.reason} | Time: {req.sessionTime}</p>
                              </div>
-                             <div className="flex gap-2">
-                                 <Button size="sm" variant="outline" className="h-8 w-8 p-0 text-red-600" onClick={() => rejectBreak(req.id)}><X className="h-4 w-4" /></Button>
-                                 <Button size="sm" variant="outline" className="h-8 w-8 p-0 text-green-600" onClick={() => approveBreak(req.id)}><Check className="h-4 w-4" /></Button>
-                             </div>
+                              <div className="flex gap-2">
+                                  <Button size="sm" variant="outline" className="h-8 w-8 p-0 text-red-600" onClick={async () => await rejectBreak(req.id)}><X className="h-4 w-4" /></Button>
+                                  <Button size="sm" variant="outline" className="h-8 w-8 p-0 text-green-600" onClick={async () => await approveBreak(req.id)}><Check className="h-4 w-4" /></Button>
+                              </div>
                          </div>
                      )
                  })}
@@ -412,8 +412,8 @@ export default function AttendancePage() {
                             {STATUS_OPTIONS.map((s) => (
                               <button
                                 key={s}
-                                onClick={() => {
-                                  updateMemberAttendance(rec.userId, rec.date, s);
+                                onClick={async () => {
+                                  await updateMemberAttendance(rec.userId, rec.date, s);
                                   toast.success(`${rec.name} marked as ${s}`);
                                 }}
                                 className={`rounded-lg px-2 py-1 text-[10px] font-medium transition-colors border ${rec.status === s
